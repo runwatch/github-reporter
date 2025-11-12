@@ -1,0 +1,24 @@
+name: 'GitHub Reporter'
+description: 'Report workflow and job metrics to RunWatch CI Metrics Dashboard'
+author: 'RunWatch'
+
+inputs:
+  api_url:
+    description: 'Base URL for your metrics ingestion endpoint'
+    required: true
+  api_key:
+    description: 'API key or token for authentication with your backend'
+    required: true
+  workflow_run_id:
+    description: 'The GitHub Actions run ID to report metrics for'
+    required: false
+    default: ${{ github.run_id }}
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
+
+branding:
+  icon: 'activity'
+  color: 'blue'
+
