@@ -17,7 +17,8 @@ jobs:
         id: seed
         run: echo "value=$RANDOM" >> $GITHUB_OUTPUT
       - name: Log seed
-        run: echo "Random seed: ${{ steps.seed.outputs.value }}"
+        run: |
+          echo "Random seed: ${{ steps.seed.outputs.value }}"
 
   build:
     runs-on: ubuntu-latest

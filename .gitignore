@@ -1,5 +1,5 @@
 node_modules/
-dist/
+# dist/ - Keep dist/ in repo for GitHub Actions to work
 *.log
 .DS_Store
 .env

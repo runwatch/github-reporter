@@ -1,6 +1,5 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import { Octokit } from '@octokit/rest';
 
 interface Job {
   name: string;
@@ -25,7 +24,7 @@ interface WorkflowMetrics {
 }
 
 async function fetchWorkflowRun(
-  octokit: Octokit,
+  octokit: Awaited<ReturnType<typeof github.getOctokit>>['rest'],
   owner: string,
   repo: string,
   runId: number
@@ -42,7 +41,7 @@ async function fetchWorkflowRun(
     run_id: runId,
   });
 
-  const jobMetrics: Job[] = jobs.jobs.map((job) => {
+  const jobMetrics: Job[] = jobs.jobs.map((job: { name: string; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null; html_url: string | null }) => {
     const startedAt = job.started_at ? new Date(job.started_at) : undefined;
     const completedAt = job.completed_at ? new Date(job.completed_at) : undefined;
     const durationSeconds = startedAt && completedAt

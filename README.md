@@ -67,7 +67,7 @@ jobs:
 # Install dependencies
 pnpm install
 
-# Build the action
+# Build the action (required before committing)
 pnpm run build
 
 # Run tests
@@ -79,6 +79,43 @@ pnpm run lint
 # Format
 pnpm run format
 ```
+
+### Testing with `act`
+
+This repo includes test workflows that can be run locally with [act](https://github.com/nektos/act):
+
+```bash
+# Build the action first (required)
+pnpm run build
+
+# Run the test workflow with a GitHub token
+# Note: GITHUB_TOKEN is an environment variable, not a secret, so use --env
+act -W .github/workflows/test-inline-mode.yml --env GITHUB_TOKEN=your_token_here
+
+# Or set it as an environment variable before running
+export GITHUB_TOKEN=your_token_here
+act -W .github/workflows/test-inline-mode.yml
+```
+
+**Creating a GitHub token for this repo:**
+
+1. Go to GitHub Settings → Developer settings → Personal access tokens → **Fine-grained tokens** (recommended)
+2. Click "Generate new token"
+3. Configure:
+   - **Token name**: e.g., "RunWatch Reporter Testing"
+   - **Expiration**: Set as needed
+   - **Repository access**: Select "Only select repositories" and choose this repository
+   - **Permissions** → **Repository permissions**:
+     - `Actions`: Read (to fetch workflow run data)
+     - `Metadata`: Read (required)
+4. Click "Generate token" and copy it immediately
+
+**Alternative (Classic token):**
+If using classic tokens, select `public_repo` scope (or `repo` for private repos). Classic tokens apply to all your repositories, so fine-grained tokens are more secure.
+
+**Note:** 
+- `act` has known limitations with local actions (`uses: ./`). The `.actrc` file configures `act` to use Node 20. If you encounter path resolution issues, the action will work correctly in GitHub Actions even if `act` has problems with local actions.
+- `GITHUB_TOKEN` is required for the action to fetch workflow data from the GitHub API. In GitHub Actions, this is automatically provided. For `act`, you need to provide it as an environment variable using `--env` (not `--secret`).
 
 ## License
 
