@@ -1,0 +1,117 @@
+name: Test Inline Mode
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      random_seed: ${{ steps.seed.outputs.value }}
+    steps:
+      - name: Generate random seed
+        id: seed
+        run: echo "value=$RANDOM" >> $GITHUB_OUTPUT
+      - name: Log seed
+        run: echo "Random seed: ${{ steps.seed.outputs.value }}"
+
+  build:
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: Calculate random duration
+        id: duration
+        run: |
+          # Use the seed to generate a consistent random number between 5-30 seconds
+          SEED=${{ needs.setup.outputs.random_seed }}
+          DURATION=$(( (SEED % 26) + 5 ))
+          echo "duration=$DURATION" >> $GITHUB_OUTPUT
+          echo "Will run for $DURATION seconds"
+      
+      - name: Simulate build work
+        run: |
+          sleep ${{ steps.duration.outputs.duration }}
+          echo "Build completed"
+      
+      - name: Random failure chance
+        run: |
+          SEED=${{ needs.setup.outputs.random_seed }}
+          FAIL_CHANCE=$(( SEED % 100 ))
+          if [ $FAIL_CHANCE -lt 20 ]; then
+            echo "Random failure triggered (20% chance)"
+            exit 1
+          fi
+          echo "Build succeeded"
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Calculate random duration
+        id: duration
+        run: |
+          SEED=${{ needs.setup.outputs.random_seed }}
+          DURATION=$(( ((SEED * 2) % 26) + 5 ))
+          echo "duration=$DURATION" >> $GITHUB_OUTPUT
+          echo "Will run for $DURATION seconds"
+      
+      - name: Simulate test work
+        run: |
+          sleep ${{ steps.duration.outputs.duration }}
+          echo "Tests completed"
+      
+      - name: Random failure chance
+        run: |
+          SEED=${{ needs.setup.outputs.random_seed }}
+          FAIL_CHANCE=$(( (SEED * 3) % 100 ))
+          if [ $FAIL_CHANCE -lt 15 ]; then
+            echo "Random failure triggered (15% chance)"
+            exit 1
+          fi
+          echo "Tests passed"
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Calculate random duration
+        id: duration
+        run: |
+          SEED=${{ needs.setup.outputs.random_seed }}
+          DURATION=$(( ((SEED * 4) % 26) + 5 ))
+          echo "duration=$DURATION" >> $GITHUB_OUTPUT
+          echo "Will run for $DURATION seconds"
+      
+      - name: Simulate deploy work
+        run: |
+          sleep ${{ steps.duration.outputs.duration }}
+          echo "Deploy completed"
+      
+      - name: Random failure chance
+        run: |
+          SEED=${{ needs.setup.outputs.random_seed }}
+          FAIL_CHANCE=$(( (SEED * 5) % 100 ))
+          if [ $FAIL_CHANCE -lt 10 ]; then
+            echo "Random failure triggered (10% chance)"
+            exit 1
+          fi
+          echo "Deploy succeeded"
+
+  report:
+    runs-on: ubuntu-latest
+    needs: [setup, build, test, deploy]
+    if: always()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Report metrics (dry run)
+        uses: ./
+        with:
+          api_key: 'dummy-key-for-testing'
+          dry_run: 'true'
+

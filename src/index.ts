@@ -54,10 +54,10 @@ async function fetchWorkflowRun(
       status: job.status === 'completed' && job.conclusion === 'success'
         ? 'success'
         : job.status === 'completed' && job.conclusion === 'failure'
-        ? 'failure'
-        : job.status === 'completed' && job.conclusion === 'cancelled'
-        ? 'cancelled'
-        : 'failure',
+          ? 'failure'
+          : job.status === 'completed' && job.conclusion === 'cancelled'
+            ? 'cancelled'
+            : 'failure',
       duration_seconds: durationSeconds,
       started_at: job.started_at || undefined,
       completed_at: job.completed_at || undefined,
@@ -69,12 +69,12 @@ async function fetchWorkflowRun(
     run.status === 'completed' && run.conclusion === 'success'
       ? 'success'
       : run.status === 'completed' && run.conclusion === 'failure'
-      ? 'failure'
-      : run.status === 'completed' && run.conclusion === 'cancelled'
-      ? 'cancelled'
-      : run.status === 'in_progress' || run.status === 'queued'
-      ? (run.status === 'in_progress' ? 'running' : 'queued')
-      : 'failure';
+        ? 'failure'
+        : run.status === 'completed' && run.conclusion === 'cancelled'
+          ? 'cancelled'
+          : run.status === 'in_progress' || run.status === 'queued'
+            ? (run.status === 'in_progress' ? 'running' : 'queued')
+            : 'failure';
 
   return {
     workflow_run_id: run.id,
@@ -90,14 +90,23 @@ async function fetchWorkflowRun(
   };
 }
 
-async function sendMetrics(apiUrl: string, apiKey: string, metrics: WorkflowMetrics): Promise<void> {
+async function sendMetrics(apiUrl: string, apiKey: string, metrics: WorkflowMetrics, dryRun: boolean): Promise<void> {
+  const jsonPayload = JSON.stringify(metrics, null, 2);
+
+  if (dryRun) {
+    core.info('=== DRY RUN MODE: JSON Payload ===');
+    core.info(jsonPayload);
+    core.info('=== END JSON Payload ===');
+    return;
+  }
+
   const response = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify(metrics),
+    body: jsonPayload,
   });
 
   if (!response.ok) {
@@ -113,13 +122,18 @@ async function run(): Promise<void> {
     const apiUrl = core.getInput('api_url', { required: true });
     const apiKey = core.getInput('api_key', { required: true });
     const workflowRunIdInput = core.getInput('workflow_run_id');
+    const dryRunInput = core.getInput('dry_run');
+    const dryRun = dryRunInput === 'true' || dryRunInput === 'True' || dryRunInput === 'TRUE';
 
+    // GITHUB_TOKEN is automatically provided by GitHub Actions (works for public repos too)
+    // For public repos, ensure the workflow has 'read' permissions for actions
     const token = process.env.GITHUB_TOKEN;
     if (!token) {
-      throw new Error('GITHUB_TOKEN is not set');
+      throw new Error('GITHUB_TOKEN is not set. This should be automatically provided by GitHub Actions.');
     }
 
-    const octokit = new Octokit({ auth: token });
+    // Use getOctokit which is the recommended way, then access .rest for the Octokit instance
+    const octokit = github.getOctokit(token).rest;
     const context = github.context;
 
     const owner = context.repo.owner;
@@ -133,9 +147,12 @@ async function run(): Promise<void> {
     }
 
     core.info(`Fetching metrics for workflow run ${runId} in ${owner}/${repo}`);
+    if (dryRun) {
+      core.info('DRY RUN MODE: Will log JSON payload instead of posting');
+    }
 
     const metrics = await fetchWorkflowRun(octokit, owner, repo, runId);
-    await sendMetrics(apiUrl, apiKey, metrics);
+    await sendMetrics(apiUrl, apiKey, metrics, dryRun);
 
     core.setOutput('workflow_run_id', metrics.workflow_run_id.toString());
     core.setOutput('status', metrics.status);

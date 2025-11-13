@@ -5,7 +5,8 @@ author: 'RunWatch'
 inputs:
   api_url:
     description: 'Base URL for your metrics ingestion endpoint'
-    required: true
+    required: false
+    default: 'https://runwatch.io/api/v1/ingest'
   api_key:
     description: 'API key or token for authentication with your backend'
     required: true
@@ -13,6 +14,10 @@ inputs:
     description: 'The GitHub Actions run ID to report metrics for'
     required: false
     default: ${{ github.run_id }}
+  dry_run:
+    description: 'If true, log the JSON payload instead of posting it'
+    required: false
+    default: 'false'
 
 runs:
   using: 'node20'
