@@ -116,6 +116,8 @@ jobs:
       
       - name: Report metrics (dry run)
         uses: ./
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           api_key: 'dummy-key-for-testing'
           dry_run: 'true'

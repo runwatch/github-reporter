@@ -124,16 +124,20 @@ async function run(): Promise<void> {
     const dryRunInput = core.getInput('dry_run');
     const dryRun = dryRunInput === 'true' || dryRunInput === 'True' || dryRunInput === 'TRUE';
 
-    // GITHUB_TOKEN is automatically provided by GitHub Actions (works for public repos too)
-    // For public repos, ensure the workflow has 'read' permissions for actions
-    // Try to get token from environment, with fallback to empty string (getOctokit will use default)
+    // GITHUB_TOKEN must be explicitly passed as an environment variable when using local actions (uses: ./)
+    // In the workflow, add: env: GITHUB_TOKEN: ${{ github.token }}
+    // For published actions, GITHUB_TOKEN is automatically available
     const token = process.env.GITHUB_TOKEN || '';
 
     if (!token) {
-      // Provide helpful error message
       throw new Error(
-        'GITHUB_TOKEN is not set. This should be automatically provided by GitHub Actions.\n' +
-        'Ensure your workflow has the required permissions:\n' +
+        'GITHUB_TOKEN is not set. When using a local action (uses: ./), you must explicitly pass it:\n' +
+        '  - uses: ./\n' +
+        '    env:\n' +
+        '      GITHUB_TOKEN: ${{ github.token }}\n' +
+        '    with:\n' +
+        '      ...\n\n' +
+        'Also ensure your workflow has the required permissions:\n' +
         '  permissions:\n' +
         '    actions: read\n' +
         '    contents: read'

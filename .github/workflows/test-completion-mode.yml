@@ -21,6 +21,8 @@ jobs:
       
       - name: Report metrics for completed workflow (dry run)
         uses: ./
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           workflow_run_id: ${{ github.event.workflow_run.id }}
           api_key: 'dummy-key-for-testing'
