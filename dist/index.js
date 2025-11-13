@@ -29963,6 +29963,18 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(6966));
 const github = __importStar(__nccwpck_require__(4903));
+function mapWorkflowStatus(status, conclusion) {
+    if (status === 'completed' && conclusion && ['success', 'failure', 'running', 'queued'].includes(conclusion)) {
+        return conclusion;
+    }
+    return 'unknown';
+}
+function mapJobStatus(status, conclusion) {
+    if (status === 'completed' && conclusion && ['success', 'failure', 'cancelled', 'skipped'].includes(conclusion)) {
+        return conclusion;
+    }
+    return 'unknown';
+}
 async function fetchWorkflowRun(octokit, owner, repo, runId) {
     const { data: run } = await octokit.actions.getWorkflowRun({
         owner,
@@ -29982,29 +29994,16 @@ async function fetchWorkflowRun(octokit, owner, repo, runId) {
             : 0;
         return {
             name: job.name,
-            status: job.status === 'completed' && job.conclusion === 'success'
-                ? 'success'
-                : job.status === 'completed' && job.conclusion === 'failure'
-                    ? 'failure'
-                    : job.status === 'completed' && job.conclusion === 'cancelled'
-                        ? 'cancelled'
-                        : 'failure',
+            status: mapJobStatus(job.status, job.conclusion),
             duration_seconds: durationSeconds,
             started_at: job.started_at || undefined,
             completed_at: job.completed_at || undefined,
             log_url: job.html_url || undefined,
         };
     });
-    const workflowStatus = run.status === 'completed' && run.conclusion === 'success'
-        ? 'success'
-        : run.status === 'completed' && run.conclusion === 'failure'
-            ? 'failure'
-            : run.status === 'completed' && run.conclusion === 'cancelled'
-                ? 'cancelled'
-                : run.status === 'in_progress' || run.status === 'queued'
-                    ? (run.status === 'in_progress' ? 'running' : 'queued')
-                    : 'failure';
+    const workflowStatus = mapWorkflowStatus(run.status, run.conclusion);
     return {
+        provider: 'github',
         workflow_run_id: run.id,
         workflow_name: run.name || run.workflow_id.toString(),
         repository: `${owner}/${repo}`,
@@ -30046,14 +30045,18 @@ async function run() {
         const workflowRunIdInput = core.getInput('workflow_run_id');
         const dryRunInput = core.getInput('dry_run');
         const dryRun = dryRunInput === 'true' || dryRunInput === 'True' || dryRunInput === 'TRUE';
-        // GITHUB_TOKEN is automatically provided by GitHub Actions (works for public repos too)
-        // For public repos, ensure the workflow has 'read' permissions for actions
-        // Try to get token from environment, with fallback to empty string (getOctokit will use default)
+        // GITHUB_TOKEN must be explicitly passed as an environment variable when using local actions (uses: ./)
+        // In the workflow, add: env: GITHUB_TOKEN: ${{ github.token }}
+        // For published actions, GITHUB_TOKEN is automatically available
         const token = process.env.GITHUB_TOKEN || '';
         if (!token) {
-            // Provide helpful error message
-            throw new Error('GITHUB_TOKEN is not set. This should be automatically provided by GitHub Actions.\n' +
-                'Ensure your workflow has the required permissions:\n' +
+            throw new Error('GITHUB_TOKEN is not set. When using a local action (uses: ./), you must explicitly pass it:\n' +
+                '  - uses: ./\n' +
+                '    env:\n' +
+                '      GITHUB_TOKEN: ${{ github.token }}\n' +
+                '    with:\n' +
+                '      ...\n\n' +
+                'Also ensure your workflow has the required permissions:\n' +
                 '  permissions:\n' +
                 '    actions: read\n' +
                 '    contents: read');

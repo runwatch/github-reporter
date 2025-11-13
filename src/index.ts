@@ -3,7 +3,7 @@ import * as github from '@actions/github';
 
 interface Job {
   name: string;
-  status: 'success' | 'failure' | 'cancelled';
+  status: 'success' | 'failure' | 'cancelled' | 'skipped' | 'unknown';
   duration_seconds: number;
   started_at?: string;
   completed_at?: string;
@@ -11,16 +11,31 @@ interface Job {
 }
 
 interface WorkflowMetrics {
+  provider: 'github';
   workflow_run_id: number;
   workflow_name: string;
   repository: string;
-  status: 'success' | 'failure' | 'cancelled' | 'running' | 'queued';
+  status: 'success' | 'failure' | 'cancelled' | 'running' | 'queued' | 'unknown';
   mode: 'inline' | 'external';
   started_at: string;
   completed_at?: string;
   triggered_by: string;
   actor: string;
   jobs: Job[];
+}
+
+function mapWorkflowStatus(status: string | null, conclusion: string | null): WorkflowMetrics['status'] {
+  if (status === 'completed' && conclusion && ['success', 'failure', 'running', 'queued'].includes(conclusion)) {
+    return conclusion as WorkflowMetrics['status'];
+  }
+  return 'unknown';
+}
+
+function mapJobStatus(status: string, conclusion: string | null): Job['status'] {
+  if (status === 'completed' && conclusion && ['success', 'failure', 'cancelled', 'skipped'].includes(conclusion)) {
+    return conclusion as Job['status'];
+  }
+  return 'unknown';
 }
 
 async function fetchWorkflowRun(
@@ -50,13 +65,7 @@ async function fetchWorkflowRun(
 
     return {
       name: job.name,
-      status: job.status === 'completed' && job.conclusion === 'success'
-        ? 'success'
-        : job.status === 'completed' && job.conclusion === 'failure'
-          ? 'failure'
-          : job.status === 'completed' && job.conclusion === 'cancelled'
-            ? 'cancelled'
-            : 'failure',
+      status: mapJobStatus(job.status, job.conclusion),
       duration_seconds: durationSeconds,
       started_at: job.started_at || undefined,
       completed_at: job.completed_at || undefined,
@@ -64,18 +73,10 @@ async function fetchWorkflowRun(
     };
   });
 
-  const workflowStatus =
-    run.status === 'completed' && run.conclusion === 'success'
-      ? 'success'
-      : run.status === 'completed' && run.conclusion === 'failure'
-        ? 'failure'
-        : run.status === 'completed' && run.conclusion === 'cancelled'
-          ? 'cancelled'
-          : run.status === 'in_progress' || run.status === 'queued'
-            ? (run.status === 'in_progress' ? 'running' : 'queued')
-            : 'failure';
+  const workflowStatus = mapWorkflowStatus(run.status, run.conclusion);
 
   return {
+    provider: 'github',
     workflow_run_id: run.id,
     workflow_name: run.name || run.workflow_id.toString(),
     repository: `${owner}/${repo}`,
