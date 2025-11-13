@@ -30048,9 +30048,15 @@ async function run() {
         const dryRun = dryRunInput === 'true' || dryRunInput === 'True' || dryRunInput === 'TRUE';
         // GITHUB_TOKEN is automatically provided by GitHub Actions (works for public repos too)
         // For public repos, ensure the workflow has 'read' permissions for actions
-        const token = process.env.GITHUB_TOKEN;
+        // Try to get token from environment, with fallback to empty string (getOctokit will use default)
+        const token = process.env.GITHUB_TOKEN || '';
         if (!token) {
-            throw new Error('GITHUB_TOKEN is not set. This should be automatically provided by GitHub Actions.');
+            // Provide helpful error message
+            throw new Error('GITHUB_TOKEN is not set. This should be automatically provided by GitHub Actions.\n' +
+                'Ensure your workflow has the required permissions:\n' +
+                '  permissions:\n' +
+                '    actions: read\n' +
+                '    contents: read');
         }
         // Use getOctokit which is the recommended way, then access .rest for the Octokit instance
         const octokit = github.getOctokit(token).rest;

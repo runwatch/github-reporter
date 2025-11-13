@@ -7,6 +7,10 @@ on:
       - main
       - develop
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   setup:
     runs-on: ubuntu-latest

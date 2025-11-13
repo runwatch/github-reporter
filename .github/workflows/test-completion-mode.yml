@@ -7,6 +7,10 @@ on:
       - completed
       - requested
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   report-on-completion:
     runs-on: ubuntu-latest
