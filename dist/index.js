@@ -29975,6 +29975,42 @@ function mapJobStatus(status, conclusion) {
     }
     return 'unknown';
 }
+function inferWorkflowStatusFromJobs(jobs, workflowStatus, workflowConclusion) {
+    // If workflow is already completed, use the actual status
+    if (workflowStatus === 'completed' && workflowConclusion) {
+        return mapWorkflowStatus(workflowStatus, workflowConclusion);
+    }
+    // If no jobs, can't infer anything
+    if (jobs.length === 0) {
+        return workflowStatus === 'queued' ? 'queued' : workflowStatus === 'in_progress' ? 'running' : 'unknown';
+    }
+    // Check for failures first (highest priority)
+    const hasFailure = jobs.some(job => job.status === 'failure');
+    if (hasFailure) {
+        return 'failure';
+    }
+    // Check for cancellations
+    const hasCancelled = jobs.some(job => job.status === 'cancelled');
+    if (hasCancelled) {
+        return 'cancelled';
+    }
+    // Check if there are any jobs still running (unknown status)
+    const hasRunningJobs = jobs.some(job => job.status === 'unknown');
+    if (hasRunningJobs) {
+        return 'running';
+    }
+    // Check if all jobs are completed and successful/skipped
+    const allCompleted = jobs.every(job => job.status === 'success' || job.status === 'skipped');
+    if (allCompleted) {
+        return 'success';
+    }
+    // If workflow is queued, return queued
+    if (workflowStatus === 'queued') {
+        return 'queued';
+    }
+    // Default to running if we have jobs but can't determine
+    return 'running';
+}
 async function getCurrentJobId(octokit, owner, repo, runId, currentJobName, runnerName) {
     try {
         const { data: jobs } = await octokit.actions.listJobsForWorkflowRun({
@@ -30045,15 +30081,15 @@ async function fetchWorkflowRun(octokit, owner, repo, runId, excludeJobId) {
         computeSeconds += durationSeconds;
         return {
             name: job.name,
-            external_id: job.id.toString(),
-            external_url: job.html_url || '',
+            job_id: job.id.toString(),
+            job_url: job.html_url || '',
             status: mapJobStatus(job.status, job.conclusion),
             duration_seconds: durationSeconds,
             started_at: job.started_at || undefined,
             completed_at: job.completed_at || undefined,
         };
     });
-    const workflowStatus = mapWorkflowStatus(run.status, run.conclusion);
+    const workflowStatus = inferWorkflowStatusFromJobs(jobMetrics, run.status, run.conclusion);
     const startedAt = run.created_at ? new Date(run.created_at) : undefined;
     const completedAt = run.updated_at ? new Date(run.updated_at) : new Date();
     const durationSeconds = startedAt && completedAt
@@ -30063,8 +30099,8 @@ async function fetchWorkflowRun(octokit, owner, repo, runId, excludeJobId) {
         provider: 'github',
         workflow_run_id: run.id,
         workflow_name: run.name || run.workflow_id.toString(),
-        external_id: run.workflow_id.toString(),
-        external_url: run.html_url,
+        workflow_id: run.workflow_id.toString(),
+        workflow_url: run.html_url,
         repository: `${owner}/${repo}`,
         status: workflowStatus,
         mode: github.context.eventName === 'workflow_run' ? 'external' : 'inline',

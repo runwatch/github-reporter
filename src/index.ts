@@ -3,8 +3,8 @@ import * as github from '@actions/github';
 
 interface Job {
   name: string;
-  external_id: string;
-  external_url: string;
+  job_id: string;
+  job_url: string;
   status: 'success' | 'failure' | 'cancelled' | 'skipped' | 'unknown';
   duration_seconds: number;
   started_at?: string;
@@ -14,8 +14,8 @@ interface Job {
 
 interface WorkflowMetrics {
   provider: 'github';
-  external_id: string;
-  external_url: string;
+  workflow_id: string;
+  workflow_url: string;
   workflow_run_id: number;
   workflow_name: string;
   repository: string;
@@ -42,6 +42,56 @@ function mapJobStatus(status: string, conclusion: string | null): Job['status'] 
     return conclusion as Job['status'];
   }
   return 'unknown';
+}
+
+function inferWorkflowStatusFromJobs(
+  jobs: Job[],
+  workflowStatus: string | null,
+  workflowConclusion: string | null
+): WorkflowMetrics['status'] {
+  // If workflow is already completed, use the actual status
+  if (workflowStatus === 'completed' && workflowConclusion) {
+    return mapWorkflowStatus(workflowStatus, workflowConclusion);
+  }
+
+  // If no jobs, can't infer anything
+  if (jobs.length === 0) {
+    return workflowStatus === 'queued' ? 'queued' : workflowStatus === 'in_progress' ? 'running' : 'unknown';
+  }
+
+  // Check for failures first (highest priority)
+  const hasFailure = jobs.some(job => job.status === 'failure');
+  if (hasFailure) {
+    return 'failure';
+  }
+
+  // Check for cancellations
+  const hasCancelled = jobs.some(job => job.status === 'cancelled');
+  if (hasCancelled) {
+    return 'cancelled';
+  }
+
+  // Check if there are any jobs still running (unknown status)
+  const hasRunningJobs = jobs.some(job => job.status === 'unknown');
+  if (hasRunningJobs) {
+    return 'running';
+  }
+
+  // Check if all jobs are completed and successful/skipped
+  const allCompleted = jobs.every(job =>
+    job.status === 'success' || job.status === 'skipped'
+  );
+  if (allCompleted) {
+    return 'success';
+  }
+
+  // If workflow is queued, return queued
+  if (workflowStatus === 'queued') {
+    return 'queued';
+  }
+
+  // Default to running if we have jobs but can't determine
+  return 'running';
 }
 
 async function getCurrentJobId(
@@ -146,8 +196,8 @@ async function fetchWorkflowRun(
 
     return {
       name: job.name,
-      external_id: job.id.toString(),
-      external_url: job.html_url || '',
+      job_id: job.id.toString(),
+      job_url: job.html_url || '',
       status: mapJobStatus(job.status, job.conclusion),
       duration_seconds: durationSeconds,
       started_at: job.started_at || undefined,
@@ -155,8 +205,7 @@ async function fetchWorkflowRun(
     };
   });
 
-  const workflowStatus = mapWorkflowStatus(run.status, run.conclusion);
-
+  const workflowStatus = inferWorkflowStatusFromJobs(jobMetrics, run.status, run.conclusion);
   const startedAt = run.created_at ? new Date(run.created_at) : undefined;
   const completedAt = run.updated_at ? new Date(run.updated_at) : new Date();
   const durationSeconds = startedAt && completedAt
@@ -167,8 +216,8 @@ async function fetchWorkflowRun(
     provider: 'github',
     workflow_run_id: run.id,
     workflow_name: run.name || run.workflow_id.toString(),
-    external_id: run.workflow_id.toString(),
-    external_url: run.html_url,
+    workflow_id: run.workflow_id.toString(),
+    workflow_url: run.html_url,
     repository: `${owner}/${repo}`,
     status: workflowStatus,
     mode: github.context.eventName === 'workflow_run' ? 'external' : 'inline',
