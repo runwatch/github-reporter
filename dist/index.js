@@ -30097,11 +30097,12 @@ async function fetchWorkflowRun(octokit, owner, repo, runId, excludeJobId) {
         : 0;
     return {
         provider: 'github',
-        workflow_run_id: run.id,
-        workflow_name: run.name || run.workflow_id.toString(),
-        workflow_id: run.workflow_id.toString(),
-        workflow_url: run.html_url,
         repository: `${owner}/${repo}`,
+        workflow_id: run.workflow_id.toString(),
+        workflow_name: run.name || run.workflow_id.toString(),
+        run_id: run.id,
+        run_name: run.display_title,
+        run_url: run.html_url,
         status: workflowStatus,
         mode: github.context.eventName === 'workflow_run' ? 'external' : 'inline',
         compute_seconds: computeSeconds,
@@ -30133,7 +30134,7 @@ async function sendMetrics(apiUrl, apiKey, metrics, dryRun) {
         const errorText = await response.text();
         throw new Error(`Failed to send metrics: ${response.status} ${response.statusText} - ${errorText}`);
     }
-    core.info(`Successfully sent metrics for workflow run ${metrics.workflow_run_id}`);
+    core.info(`Successfully sent metrics for workflow run ${metrics.run_id}`);
 }
 async function run() {
     try {
@@ -30193,7 +30194,7 @@ async function run() {
         }
         const metrics = await fetchWorkflowRun(octokit, owner, repo, runId, currentJobId);
         await sendMetrics(apiUrl, apiKey, metrics, dryRun);
-        core.setOutput('workflow_run_id', metrics.workflow_run_id.toString());
+        core.setOutput('workflow_run_id', metrics.run_id.toString());
         core.setOutput('status', metrics.status);
     }
     catch (error) {
