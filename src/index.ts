@@ -38,11 +38,72 @@ function mapJobStatus(status: string, conclusion: string | null): Job['status'] 
   return 'unknown';
 }
 
+async function getCurrentJobId(
+  octokit: Awaited<ReturnType<typeof github.getOctokit>>['rest'],
+  owner: string,
+  repo: string,
+  runId: number,
+  currentJobName: string,
+  runnerName?: string
+): Promise<number | undefined> {
+  try {
+    const { data: jobs } = await octokit.actions.listJobsForWorkflowRun({
+      owner,
+      repo,
+      run_id: runId,
+    });
+
+    // Find all jobs matching the current job name
+    const matchingJobs = jobs.jobs.filter((job: { name: string; runner_name?: string | null }) => {
+      return job.name === currentJobName;
+    });
+
+    if (matchingJobs.length === 0) {
+      core.warning(`No jobs found matching current job name: ${currentJobName}`);
+      return undefined;
+    }
+
+    // If there's exactly one match, use it (safe to filter)
+    if (matchingJobs.length === 1) {
+      return matchingJobs[0].id;
+    }
+
+    // If there are multiple jobs with the same name, try to match by runner name
+    if (runnerName) {
+      const runnerMatch = matchingJobs.find((job: { runner_name?: string | null }) => {
+        return job.runner_name === runnerName;
+      });
+
+      if (runnerMatch) {
+        return runnerMatch.id;
+      }
+
+      core.warning(
+        `Multiple jobs found with name "${currentJobName}" but none match runner "${runnerName}". ` +
+        `Not filtering to avoid false positives.`
+      );
+      return undefined;
+    }
+
+    // Multiple matches but no runner name - don't filter to avoid false positives
+    core.warning(
+      `Multiple jobs found with name "${currentJobName}" (${matchingJobs.length} matches). ` +
+      `Not filtering to avoid false positives.`
+    );
+    return undefined;
+  } catch (error) {
+    // If we can't identify the current job, return undefined (won't filter)
+    core.warning(`Could not identify current job ID: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return undefined;
+  }
+}
+
 async function fetchWorkflowRun(
   octokit: Awaited<ReturnType<typeof github.getOctokit>>['rest'],
   owner: string,
   repo: string,
-  runId: number
+  runId: number,
+  excludeJobId?: number
 ): Promise<WorkflowMetrics> {
   const { data: run } = await octokit.actions.getWorkflowRun({
     owner,
@@ -50,13 +111,23 @@ async function fetchWorkflowRun(
     run_id: runId,
   });
 
+  console.log('WORKFLOW RUN:', run);
+
   const { data: jobs } = await octokit.actions.listJobsForWorkflowRun({
     owner,
     repo,
     run_id: runId,
   });
 
-  const jobMetrics: Job[] = jobs.jobs.map((job: { name: string; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null; html_url: string | null }) => {
+  console.log('WORKFLOW RUN JOBS:', jobs);
+
+  // Filter out the current job if excludeJobId is provided (inline mode)
+  // Only filter by numeric job ID to avoid false positives
+  const filteredJobs = excludeJobId
+    ? jobs.jobs.filter((job: { id: number }) => job.id !== excludeJobId)
+    : jobs.jobs;
+
+  const jobMetrics: Job[] = filteredJobs.map((job: { name: string; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null; html_url: string | null }) => {
     const startedAt = job.started_at ? new Date(job.started_at) : undefined;
     const completedAt = job.completed_at ? new Date(job.completed_at) : undefined;
     const durationSeconds = startedAt && completedAt
@@ -125,6 +196,8 @@ async function run(): Promise<void> {
     const dryRunInput = core.getInput('dry_run');
     const dryRun = dryRunInput === 'true' || dryRunInput === 'True' || dryRunInput === 'TRUE';
 
+    console.log('ENVIRONMENT VARIABLES:', process.env);
+
     // GITHUB_TOKEN must be explicitly passed as an environment variable when using local actions (uses: ./)
     // In the workflow, add: env: GITHUB_TOKEN: ${{ github.token }}
     // For published actions, GITHUB_TOKEN is automatically available
@@ -164,7 +237,27 @@ async function run(): Promise<void> {
       core.info('DRY RUN MODE: Will log JSON payload instead of posting');
     }
 
-    const metrics = await fetchWorkflowRun(octokit, owner, repo, runId);
+    // In inline mode, exclude the current job from the report to avoid self-reporting
+    const isInlineMode = context.eventName !== 'workflow_run';
+    let currentJobId: number | undefined;
+
+    if (isInlineMode) {
+      // Identify the current job by matching job name (and runner name if available)
+      // Only filters if we can uniquely identify the job to avoid false positives
+      const currentJobName = context.job;
+      const runnerName = process.env.RUNNER_NAME || undefined;
+
+      if (currentJobName) {
+        currentJobId = await getCurrentJobId(octokit, owner, repo, runId, currentJobName, runnerName);
+        if (currentJobId) {
+          core.info(`Excluding current job (ID: ${currentJobId}, Name: ${currentJobName}) from metrics report`);
+        }
+      } else {
+        core.warning('Could not determine current job ID: missing job name');
+      }
+    }
+
+    const metrics = await fetchWorkflowRun(octokit, owner, repo, runId, currentJobId);
     await sendMetrics(apiUrl, apiKey, metrics, dryRun);
 
     core.setOutput('workflow_run_id', metrics.workflow_run_id.toString());
