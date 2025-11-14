@@ -1,21 +1,25 @@
-name: 'GitHub Reporter'
-description: 'Report workflow and job metrics to RunWatch CI Metrics Dashboard'
+name: 'RunWatch GitHub Reporter'
+description: 'Report workflow and job metrics to the RunWatch Pipeline Pulse Portal'
 author: 'RunWatch'
 
 inputs:
-  api_url:
-    description: 'Base URL for your metrics ingestion endpoint'
+  runwatch_api_url:
+    description: 'URL of the RunWatch ingestion API endpoint'
     required: false
-    default: 'https://runwatch.io/api/v1/ingest'
-  api_key:
-    description: 'API key or token for authentication with your backend'
+    default: 'https://api.runwatch.io/v1/ingest'
+  runwatch_api_key:
+    description: 'API Key or Token for authentication with the RunWatch API'
     required: true
   workflow_run_id:
-    description: 'The GitHub Actions run ID to report metrics for'
+    description: 'The GitHub Actions workflow run ID to report metrics for (if not provided, the current run ID will be used)'
     required: false
     default: ${{ github.run_id }}
   dry_run:
-    description: 'If true, log the JSON payload instead of posting it'
+    description: 'If true, just log the JSON payload instead of posting it to the RunWatch API'
+    required: false
+    default: 'false'
+  debug:
+    description: 'If true, log additional debug information'
     required: false
     default: 'false'
 

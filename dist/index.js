@@ -29963,14 +29963,30 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(6966));
 const github = __importStar(__nccwpck_require__(4903));
+// Valid workflow conclusions (only for completed workflows)
+const VALID_WORKFLOW_CONCLUSIONS = ['success', 'failure', 'cancelled', 'skipped'];
+// Valid job conclusions
+const VALID_JOB_CONCLUSIONS = ['success', 'failure', 'cancelled', 'skipped'];
+// Type guard to check if a string is a valid workflow conclusion
+function isValidWorkflowConclusion(conclusion) {
+    return (conclusion !== null &&
+        VALID_WORKFLOW_CONCLUSIONS.includes(conclusion));
+}
+// Type guard to check if a string is a valid job conclusion
+function isValidJobConclusion(conclusion) {
+    return (conclusion !== null &&
+        VALID_JOB_CONCLUSIONS.includes(conclusion));
+}
 function mapWorkflowStatus(status, conclusion) {
-    if (status === 'completed' && conclusion && ['success', 'failure', 'running', 'queued'].includes(conclusion)) {
+    // Only completed workflows have conclusions
+    // Valid conclusions: success, failure, cancelled, skipped
+    if (status === 'completed' && isValidWorkflowConclusion(conclusion)) {
         return conclusion;
     }
     return 'unknown';
 }
 function mapJobStatus(status, conclusion) {
-    if (status === 'completed' && conclusion && ['success', 'failure', 'cancelled', 'skipped'].includes(conclusion)) {
+    if (status === 'completed' && isValidJobConclusion(conclusion)) {
         return conclusion;
     }
     return 'unknown';
@@ -29982,25 +29998,29 @@ function inferWorkflowStatusFromJobs(jobs, workflowStatus, workflowConclusion) {
     }
     // If no jobs, can't infer anything
     if (jobs.length === 0) {
-        return workflowStatus === 'queued' ? 'queued' : workflowStatus === 'in_progress' ? 'running' : 'unknown';
+        return workflowStatus === 'queued'
+            ? 'queued'
+            : workflowStatus === 'in_progress'
+                ? 'running'
+                : 'unknown';
     }
     // Check for failures first (highest priority)
-    const hasFailure = jobs.some(job => job.status === 'failure');
+    const hasFailure = jobs.some((job) => job.status === 'failure');
     if (hasFailure) {
         return 'failure';
     }
     // Check for cancellations
-    const hasCancelled = jobs.some(job => job.status === 'cancelled');
+    const hasCancelled = jobs.some((job) => job.status === 'cancelled');
     if (hasCancelled) {
         return 'cancelled';
     }
     // Check if there are any jobs still running (unknown status)
-    const hasRunningJobs = jobs.some(job => job.status === 'unknown');
+    const hasRunningJobs = jobs.some((job) => job.status === 'unknown');
     if (hasRunningJobs) {
         return 'running';
     }
     // Check if all jobs are completed and successful/skipped
-    const allCompleted = jobs.every(job => job.status === 'success' || job.status === 'skipped');
+    const allCompleted = jobs.every((job) => job.status === 'success' || job.status === 'skipped');
     if (allCompleted) {
         return 'success';
     }
@@ -30053,19 +30073,23 @@ async function getCurrentJobId(octokit, owner, repo, runId, currentJobName, runn
         return undefined;
     }
 }
-async function fetchWorkflowRun(octokit, owner, repo, runId, excludeJobId) {
+async function fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, excludeJobId, debug) {
     const { data: run } = await octokit.actions.getWorkflowRun({
         owner,
         repo,
         run_id: runId,
     });
-    console.log('WORKFLOW RUN:', run);
+    if (debug) {
+        core.debug(`workflow run:\n${JSON.stringify(run, null, 2)}`);
+    }
     const { data: jobs } = await octokit.actions.listJobsForWorkflowRun({
         owner,
         repo,
         run_id: runId,
     });
-    console.log('WORKFLOW RUN JOBS:', jobs);
+    if (debug) {
+        core.debug(`workflow jobs:\n${JSON.stringify(jobs, null, 2)}`);
+    }
     // Filter out the current job if excludeJobId is provided (inline mode)
     // Only filter by numeric job ID to avoid false positives
     const filteredJobs = excludeJobId
@@ -30091,10 +30115,28 @@ async function fetchWorkflowRun(octokit, owner, repo, runId, excludeJobId) {
     });
     const workflowStatus = inferWorkflowStatusFromJobs(jobMetrics, run.status, run.conclusion);
     const startedAt = run.created_at ? new Date(run.created_at) : undefined;
-    const completedAt = run.updated_at ? new Date(run.updated_at) : new Date();
+    // Determine completed_at:
+    // - If workflow is marked as completed, use run.updated_at
+    // - If in inline mode (we're the last step), treat workflow as completed now
+    // - Otherwise, leave undefined for running workflows
+    let completedAt;
+    let completedAtString;
+    if (run.status === 'completed' && run.updated_at) {
+        // Workflow is actually completed
+        completedAt = new Date(run.updated_at);
+        completedAtString = run.updated_at;
+    }
+    else if (isInlineMode) {
+        // In inline mode, we're the last step, so treat workflow as completed
+        // Prefer run.updated_at if available (more accurate), otherwise use current time
+        completedAt = run.updated_at ? new Date(run.updated_at) : new Date();
+        completedAtString = run.updated_at || new Date().toISOString();
+    }
     const durationSeconds = startedAt && completedAt
         ? Math.floor((completedAt.getTime() - startedAt.getTime()) / 1000)
-        : 0;
+        : startedAt
+            ? Math.floor((Date.now() - startedAt.getTime()) / 1000)
+            : 0;
     return {
         provider: 'github',
         repository: `${owner}/${repo}`,
@@ -30104,23 +30146,24 @@ async function fetchWorkflowRun(octokit, owner, repo, runId, excludeJobId) {
         run_name: run.display_title,
         run_url: run.html_url,
         status: workflowStatus,
-        mode: github.context.eventName === 'workflow_run' ? 'external' : 'inline',
+        mode: isInlineMode ? 'inline' : 'external',
         compute_seconds: computeSeconds,
         duration_seconds: durationSeconds,
         started_at: run.created_at,
-        completed_at: run.updated_at || (new Date()).toISOString(),
+        completed_at: completedAtString,
         triggered_by: run.event || 'unknown',
         actor: run.actor?.login || 'unknown',
         jobs: jobMetrics,
     };
 }
-async function sendMetrics(apiUrl, apiKey, metrics, dryRun) {
+async function sendMetrics(apiUrl, apiKey, metrics, dryRun, debug) {
     const jsonPayload = JSON.stringify(metrics, null, 2);
-    if (dryRun) {
-        core.info('=== DRY RUN MODE: JSON Payload ===');
-        core.info(jsonPayload);
-        core.info('=== END JSON Payload ===');
-        return;
+    if (debug || dryRun) {
+        core.info(`JSON Payload:\n${jsonPayload}`);
+        if (dryRun) {
+            core.info('Dry run mode: Skipping actual API call');
+            return;
+        }
     }
     const response = await fetch(apiUrl, {
         method: 'POST',
@@ -30138,44 +30181,29 @@ async function sendMetrics(apiUrl, apiKey, metrics, dryRun) {
 }
 async function run() {
     try {
-        const apiUrl = core.getInput('api_url', { required: true });
-        const apiKey = core.getInput('api_key', { required: true });
+        const runwatchApiUrl = core.getInput('runwatch_api_url', { required: true });
+        const runwatchApiKey = core.getInput('runwatch_api_key', { required: true });
         const workflowRunIdInput = core.getInput('workflow_run_id');
         const dryRunInput = core.getInput('dry_run');
-        const dryRun = dryRunInput === 'true' || dryRunInput === 'True' || dryRunInput === 'TRUE';
+        const dryRun = dryRunInput?.toLowerCase() === 'true';
+        const debugInput = core.getInput('debug');
+        const debug = debugInput?.toLowerCase() === 'true';
         // GITHUB_TOKEN must be explicitly passed as an environment variable when using local actions (uses: ./)
-        // In the workflow, add: env: GITHUB_TOKEN: ${{ github.token }}
-        // For published actions, GITHUB_TOKEN is automatically available
         const token = process.env.GITHUB_TOKEN || '';
         if (!token) {
-            throw new Error('GITHUB_TOKEN is not set. When using a local action (uses: ./), you must explicitly pass it:\n' +
-                '  - uses: ./\n' +
-                '    env:\n' +
-                '      GITHUB_TOKEN: ${{ github.token }}\n' +
-                '    with:\n' +
-                '      ...\n\n' +
-                'Also ensure your workflow has the required permissions:\n' +
-                '  permissions:\n' +
-                '    actions: read\n' +
-                '    contents: read');
+            throw new Error('GITHUB_TOKEN is not set');
         }
-        // Use getOctokit which is the recommended way, then access .rest for the Octokit instance
         const octokit = github.getOctokit(token).rest;
         const context = github.context;
         const owner = context.repo.owner;
         const repo = context.repo.repo;
-        const runId = workflowRunIdInput
-            ? parseInt(workflowRunIdInput, 10)
-            : context.runId;
-        if (isNaN(runId)) {
-            throw new Error(`Invalid workflow_run_id: ${workflowRunIdInput}`);
+        const runId = workflowRunIdInput ? parseInt(workflowRunIdInput, 10) : context.runId;
+        if (isNaN(runId) || runId <= 0) {
+            throw new Error(`Invalid workflow_run_id: ${workflowRunIdInput || 'not provided'}`);
         }
-        core.info(`Fetching metrics for workflow run ${runId} in ${owner}/${repo}`);
-        if (dryRun) {
-            core.info('DRY RUN MODE: Will log JSON payload instead of posting');
-        }
-        // In inline mode, exclude the current job from the report to avoid self-reporting
         const isInlineMode = context.eventName !== 'workflow_run';
+        core.info(`Fetching metrics for:\nworkflow_run_id: ${runId}\nrepository: ${owner}/${repo}\nrunwatch_api_url: ${runwatchApiUrl}\nmode: ${isInlineMode ? 'inline' : 'external'}\ndry_run: ${dryRun}\ndebug: ${debug}`);
+        // In inline mode, exclude the current job from the report to avoid self-reporting
         let currentJobId;
         if (isInlineMode) {
             // Identify the current job by matching job name (and runner name if available)
@@ -30192,8 +30220,8 @@ async function run() {
                 core.warning('Could not determine current job ID: missing job name');
             }
         }
-        const metrics = await fetchWorkflowRun(octokit, owner, repo, runId, currentJobId);
-        await sendMetrics(apiUrl, apiKey, metrics, dryRun);
+        const metrics = await fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, currentJobId, debug);
+        await sendMetrics(runwatchApiUrl, runwatchApiKey, metrics, dryRun, debug);
         core.setOutput('workflow_run_id', metrics.run_id.toString());
         core.setOutput('status', metrics.status);
     }
