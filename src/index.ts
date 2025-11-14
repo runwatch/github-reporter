@@ -3,6 +3,8 @@ import * as github from '@actions/github';
 
 interface Job {
   name: string;
+  external_id: string;
+  external_url: string;
   status: 'success' | 'failure' | 'cancelled' | 'skipped' | 'unknown';
   duration_seconds: number;
   started_at?: string;
@@ -12,11 +14,15 @@ interface Job {
 
 interface WorkflowMetrics {
   provider: 'github';
+  external_id: string;
+  external_url: string;
   workflow_run_id: number;
   workflow_name: string;
   repository: string;
   status: 'success' | 'failure' | 'cancelled' | 'running' | 'queued' | 'unknown';
   mode: 'inline' | 'external';
+  compute_seconds: number;
+  duration_seconds: number;
   started_at: string;
   completed_at?: string;
   triggered_by: string;
@@ -127,34 +133,49 @@ async function fetchWorkflowRun(
     ? jobs.jobs.filter((job: { id: number }) => job.id !== excludeJobId)
     : jobs.jobs;
 
-  const jobMetrics: Job[] = filteredJobs.map((job: { name: string; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null; html_url: string | null }) => {
+  let computeSeconds = 0;
+
+  const jobMetrics: Job[] = filteredJobs.map((job: { name: string; id: number; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null; html_url: string | null }) => {
     const startedAt = job.started_at ? new Date(job.started_at) : undefined;
     const completedAt = job.completed_at ? new Date(job.completed_at) : undefined;
     const durationSeconds = startedAt && completedAt
       ? Math.floor((completedAt.getTime() - startedAt.getTime()) / 1000)
       : 0;
 
+    computeSeconds += durationSeconds;
+
     return {
       name: job.name,
+      external_id: job.id.toString(),
+      external_url: job.html_url || '',
       status: mapJobStatus(job.status, job.conclusion),
       duration_seconds: durationSeconds,
       started_at: job.started_at || undefined,
       completed_at: job.completed_at || undefined,
-      log_url: job.html_url || undefined,
     };
   });
 
   const workflowStatus = mapWorkflowStatus(run.status, run.conclusion);
 
+  const startedAt = run.created_at ? new Date(run.created_at) : undefined;
+  const completedAt = run.updated_at ? new Date(run.updated_at) : new Date();
+  const durationSeconds = startedAt && completedAt
+    ? Math.floor((completedAt.getTime() - startedAt.getTime()) / 1000)
+    : 0;
+
   return {
     provider: 'github',
     workflow_run_id: run.id,
     workflow_name: run.name || run.workflow_id.toString(),
+    external_id: run.workflow_id.toString(),
+    external_url: run.html_url,
     repository: `${owner}/${repo}`,
     status: workflowStatus,
     mode: github.context.eventName === 'workflow_run' ? 'external' : 'inline',
+    compute_seconds: computeSeconds,
+    duration_seconds: durationSeconds,
     started_at: run.created_at,
-    completed_at: run.updated_at || undefined,
+    completed_at: run.updated_at || (new Date()).toISOString(),
     triggered_by: run.event || 'unknown',
     actor: run.actor?.login || 'unknown',
     jobs: jobMetrics,
@@ -195,8 +216,6 @@ async function run(): Promise<void> {
     const workflowRunIdInput = core.getInput('workflow_run_id');
     const dryRunInput = core.getInput('dry_run');
     const dryRun = dryRunInput === 'true' || dryRunInput === 'True' || dryRunInput === 'TRUE';
-
-    console.log('ENVIRONMENT VARIABLES:', process.env);
 
     // GITHUB_TOKEN must be explicitly passed as an environment variable when using local actions (uses: ./)
     // In the workflow, add: env: GITHUB_TOKEN: ${{ github.token }}

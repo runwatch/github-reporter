@@ -30035,31 +30035,43 @@ async function fetchWorkflowRun(octokit, owner, repo, runId, excludeJobId) {
     const filteredJobs = excludeJobId
         ? jobs.jobs.filter((job) => job.id !== excludeJobId)
         : jobs.jobs;
+    let computeSeconds = 0;
     const jobMetrics = filteredJobs.map((job) => {
         const startedAt = job.started_at ? new Date(job.started_at) : undefined;
         const completedAt = job.completed_at ? new Date(job.completed_at) : undefined;
         const durationSeconds = startedAt && completedAt
             ? Math.floor((completedAt.getTime() - startedAt.getTime()) / 1000)
             : 0;
+        computeSeconds += durationSeconds;
         return {
             name: job.name,
+            external_id: job.id.toString(),
+            external_url: job.html_url || '',
             status: mapJobStatus(job.status, job.conclusion),
             duration_seconds: durationSeconds,
             started_at: job.started_at || undefined,
             completed_at: job.completed_at || undefined,
-            log_url: job.html_url || undefined,
         };
     });
     const workflowStatus = mapWorkflowStatus(run.status, run.conclusion);
+    const startedAt = run.created_at ? new Date(run.created_at) : undefined;
+    const completedAt = run.updated_at ? new Date(run.updated_at) : new Date();
+    const durationSeconds = startedAt && completedAt
+        ? Math.floor((completedAt.getTime() - startedAt.getTime()) / 1000)
+        : 0;
     return {
         provider: 'github',
         workflow_run_id: run.id,
         workflow_name: run.name || run.workflow_id.toString(),
+        external_id: run.workflow_id.toString(),
+        external_url: run.html_url,
         repository: `${owner}/${repo}`,
         status: workflowStatus,
         mode: github.context.eventName === 'workflow_run' ? 'external' : 'inline',
+        compute_seconds: computeSeconds,
+        duration_seconds: durationSeconds,
         started_at: run.created_at,
-        completed_at: run.updated_at || undefined,
+        completed_at: run.updated_at || (new Date()).toISOString(),
         triggered_by: run.event || 'unknown',
         actor: run.actor?.login || 'unknown',
         jobs: jobMetrics,
@@ -30094,7 +30106,6 @@ async function run() {
         const workflowRunIdInput = core.getInput('workflow_run_id');
         const dryRunInput = core.getInput('dry_run');
         const dryRun = dryRunInput === 'true' || dryRunInput === 'True' || dryRunInput === 'TRUE';
-        console.log('ENVIRONMENT VARIABLES:', process.env);
         // GITHUB_TOKEN must be explicitly passed as an environment variable when using local actions (uses: ./)
         // In the workflow, add: env: GITHUB_TOKEN: ${{ github.token }}
         // For published actions, GITHUB_TOKEN is automatically available
