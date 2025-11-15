@@ -119,6 +119,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          api_key: 'dummy-key-for-testing'
+          runwatch_api_key: 'dummy-key-for-testing'
+          debug: 'true'
           dry_run: 'true'
 

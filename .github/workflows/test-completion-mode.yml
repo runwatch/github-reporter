@@ -24,6 +24,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           workflow_run_id: ${{ github.event.workflow_run.id }}
-          api_key: 'dummy-key-for-testing'
+          runwatch_api_key: 'dummy-key-for-testing'
+          debug: 'true'
           dry_run: 'true'
 
