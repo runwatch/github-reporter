@@ -30143,6 +30143,7 @@ async function fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, exclu
         workflow_id: run.workflow_id.toString(),
         workflow_name: run.name || run.workflow_id.toString(),
         run_id: run.id,
+        run_attempt: run.run_attempt || 1,
         run_name: run.display_title,
         run_url: run.html_url,
         status: workflowStatus,

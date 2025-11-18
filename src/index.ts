@@ -32,6 +32,7 @@ interface WorkflowMetrics {
   workflow_id: string;
   workflow_name: string;
   run_id: number;
+  run_attempt: number;
   run_name: string;
   run_url: string;
   status: 'success' | 'failure' | 'cancelled' | 'skipped' | 'running' | 'queued' | 'unknown';
@@ -295,6 +296,7 @@ async function fetchWorkflowRun(
     workflow_id: run.workflow_id.toString(),
     workflow_name: run.name || run.workflow_id.toString(),
     run_id: run.id,
+    run_attempt: run.run_attempt || 1,
     run_name: run.display_title,
     run_url: run.html_url,
     status: workflowStatus,
