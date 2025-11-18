@@ -121,5 +121,5 @@ jobs:
         with:
           runwatch_api_key: ${{ secrets.RUNWATCH_API_KEY }}
           runwatch_api_url: ${{ secrets.RUNWATCH_API_URL }}
-          debug: 'true'
-          dry_run: 'true'
+          debug: ${{ env.DEBUG || 'true' }}
+          dry_run: ${{ env.DRY_RUN || 'true' }}
