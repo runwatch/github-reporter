@@ -14,15 +14,29 @@ permissions:
 jobs:
   setup:
     runs-on: ubuntu-latest
-    outputs:
-      random_seed: ${{ steps.seed.outputs.value }}
     steps:
-      - name: Generate random seed
-        id: seed
-        run: echo "value=$RANDOM" >> $GITHUB_OUTPUT
-      - name: Log seed
+      - name: Calculate random duration
+        id: duration
         run: |
-          echo "Random seed: ${{ steps.seed.outputs.value }}"
+          # Generate random duration between 5-30 seconds
+          DURATION=$(( (RANDOM % 26) + 5 ))
+          echo "duration=$DURATION" >> $GITHUB_OUTPUT
+          echo "Will run for $DURATION seconds"
+      
+      - name: Simulate setup work
+        run: |
+          sleep ${{ steps.duration.outputs.duration }}
+          echo "Setup completed"
+      
+      - name: Random failure chance
+        run: |
+          FAIL_CHANCE=$(( RANDOM % 100 ))
+          echo "Random value: $FAIL_CHANCE"
+          if [ $FAIL_CHANCE -lt 10 ]; then
+            echo "Random failure triggered (10% chance)"
+            exit 1
+          fi
+          echo "Setup succeeded"
 
   build:
     runs-on: ubuntu-latest
@@ -31,9 +45,8 @@ jobs:
       - name: Calculate random duration
         id: duration
         run: |
-          # Use the seed to generate a consistent random number between 5-30 seconds
-          SEED=${{ needs.setup.outputs.random_seed }}
-          DURATION=$(( (SEED % 26) + 5 ))
+          # Generate random duration between 5-30 seconds
+          DURATION=$(( (RANDOM % 26) + 5 ))
           echo "duration=$DURATION" >> $GITHUB_OUTPUT
           echo "Will run for $DURATION seconds"
       
@@ -44,10 +57,10 @@ jobs:
       
       - name: Random failure chance
         run: |
-          SEED=${{ needs.setup.outputs.random_seed }}
-          FAIL_CHANCE=$(( SEED % 100 ))
-          if [ $FAIL_CHANCE -lt 20 ]; then
-            echo "Random failure triggered (20% chance)"
+          FAIL_CHANCE=$(( RANDOM % 100 ))
+          echo "Random value: $FAIL_CHANCE"
+          if [ $FAIL_CHANCE -lt 10 ]; then
+            echo "Random failure triggered (10% chance)"
             exit 1
           fi
           echo "Build succeeded"
@@ -59,8 +72,8 @@ jobs:
       - name: Calculate random duration
         id: duration
         run: |
-          SEED=${{ needs.setup.outputs.random_seed }}
-          DURATION=$(( ((SEED * 2) % 26) + 5 ))
+          # Generate random duration between 5-30 seconds
+          DURATION=$(( (RANDOM % 26) + 5 ))
           echo "duration=$DURATION" >> $GITHUB_OUTPUT
           echo "Will run for $DURATION seconds"
       
@@ -71,10 +84,10 @@ jobs:
       
       - name: Random failure chance
         run: |
-          SEED=${{ needs.setup.outputs.random_seed }}
-          FAIL_CHANCE=$(( (SEED * 3) % 100 ))
-          if [ $FAIL_CHANCE -lt 15 ]; then
-            echo "Random failure triggered (15% chance)"
+          FAIL_CHANCE=$(( RANDOM % 100 ))
+          echo "Random value: $FAIL_CHANCE"
+          if [ $FAIL_CHANCE -lt 10 ]; then
+            echo "Random failure triggered (10% chance)"
             exit 1
           fi
           echo "Tests passed"
@@ -86,8 +99,8 @@ jobs:
       - name: Calculate random duration
         id: duration
         run: |
-          SEED=${{ needs.setup.outputs.random_seed }}
-          DURATION=$(( ((SEED * 4) % 26) + 5 ))
+          # Generate random duration between 5-30 seconds
+          DURATION=$(( (RANDOM % 26) + 5 ))
           echo "duration=$DURATION" >> $GITHUB_OUTPUT
           echo "Will run for $DURATION seconds"
       
@@ -98,8 +111,8 @@ jobs:
       
       - name: Random failure chance
         run: |
-          SEED=${{ needs.setup.outputs.random_seed }}
-          FAIL_CHANCE=$(( (SEED * 5) % 100 ))
+          FAIL_CHANCE=$(( RANDOM % 100 ))
+          echo "Random value: $FAIL_CHANCE"
           if [ $FAIL_CHANCE -lt 10 ]; then
             echo "Random failure triggered (10% chance)"
             exit 1
