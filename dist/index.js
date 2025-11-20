@@ -29977,6 +29977,26 @@ function isValidJobConclusion(conclusion) {
     return (conclusion !== null &&
         VALID_JOB_CONCLUSIONS.includes(conclusion));
 }
+function extractBranchName(ref, headRef) {
+    // For pull requests, use the head_ref (source branch)
+    if (headRef) {
+        return headRef;
+    }
+    // For push events and other triggers, extract from ref
+    // ref format: refs/heads/branch-name or refs/tags/tag-name or refs/pull/123/merge
+    if (ref.startsWith('refs/heads/')) {
+        return ref.replace('refs/heads/', '');
+    }
+    if (ref.startsWith('refs/tags/')) {
+        return ref.replace('refs/tags/', '');
+    }
+    if (ref.startsWith('refs/pull/')) {
+        // For PR merge refs, return the ref as-is for tracking
+        return ref;
+    }
+    // If we can't parse it, return the raw ref
+    return ref;
+}
 function mapWorkflowStatus(status, conclusion) {
     // Only completed workflows have conclusions
     // Valid conclusions: success, failure, cancelled, skipped
@@ -30073,7 +30093,7 @@ async function getCurrentJobId(octokit, owner, repo, runId, currentJobName, runn
         return undefined;
     }
 }
-async function fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, excludeJobId, debug) {
+async function fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, branch, excludeJobId, debug) {
     const { data: run } = await octokit.actions.getWorkflowRun({
         owner,
         repo,
@@ -30154,6 +30174,7 @@ async function fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, exclu
         completed_at: completedAtString,
         triggered_by: run.event || 'unknown',
         actor: run.actor?.login || 'unknown',
+        branch,
         jobs: jobMetrics,
     };
 }
@@ -30203,7 +30224,9 @@ async function run() {
             throw new Error(`Invalid workflow_run_id: ${workflowRunIdInput || 'not provided'}`);
         }
         const isInlineMode = context.eventName !== 'workflow_run';
-        core.info(`Fetching metrics for:\nworkflow_run_id: ${runId}\nrepository: ${owner}/${repo}\nrunwatch_api_url: ${runwatchApiUrl}\nmode: ${isInlineMode ? 'inline' : 'external'}\ndry_run: ${dryRun}\ndebug: ${debug}`);
+        // Extract branch name from GitHub context
+        const branch = extractBranchName(context.ref, context.payload.pull_request?.head?.ref || '');
+        core.info(`Fetching metrics for:\nworkflow_run_id: ${runId}\nrepository: ${owner}/${repo}\nbranch: ${branch}\nrunwatch_api_url: ${runwatchApiUrl}\nmode: ${isInlineMode ? 'inline' : 'external'}\ndry_run: ${dryRun}\ndebug: ${debug}`);
         // In inline mode, exclude the current job from the report to avoid self-reporting
         let currentJobId;
         if (isInlineMode) {
@@ -30221,7 +30244,7 @@ async function run() {
                 core.warning('Could not determine current job ID: missing job name');
             }
         }
-        const metrics = await fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, currentJobId, debug);
+        const metrics = await fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, branch, currentJobId, debug);
         await sendMetrics(runwatchApiUrl, runwatchApiKey, metrics, dryRun, debug);
         core.setOutput('workflow_run_id', metrics.run_id.toString());
         core.setOutput('status', metrics.status);
