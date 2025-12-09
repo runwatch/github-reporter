@@ -210,7 +210,7 @@ async function getCurrentJobId(
 
       core.warning(
         `Multiple jobs found with name "${currentJobName}" but none match runner "${runnerName}". ` +
-        `Not filtering to avoid false positives.`
+          `Not filtering to avoid false positives.`
       );
       return undefined;
     }
@@ -218,7 +218,7 @@ async function getCurrentJobId(
     // Multiple matches but no runner name - don't filter to avoid false positives
     core.warning(
       `Multiple jobs found with name "${currentJobName}" (${matchingJobs.length} matches). ` +
-      `Not filtering to avoid false positives.`
+        `Not filtering to avoid false positives.`
     );
     return undefined;
   } catch (error) {
