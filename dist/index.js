@@ -29963,14 +29963,14 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(6966));
 const github = __importStar(__nccwpck_require__(4903));
-// Valid workflow conclusions (only for completed workflows)
-const VALID_WORKFLOW_CONCLUSIONS = ['success', 'failure', 'cancelled', 'skipped'];
+// Valid pipeline conclusions (only for completed pipelines)
+const VALID_PIPELINE_CONCLUSIONS = ['success', 'failure', 'cancelled', 'skipped'];
 // Valid job conclusions
 const VALID_JOB_CONCLUSIONS = ['success', 'failure', 'cancelled', 'skipped'];
-// Type guard to check if a string is a valid workflow conclusion
-function isValidWorkflowConclusion(conclusion) {
+// Type guard to check if a string is a valid pipeline conclusion
+function isValidPipelineConclusion(conclusion) {
     return (conclusion !== null &&
-        VALID_WORKFLOW_CONCLUSIONS.includes(conclusion));
+        VALID_PIPELINE_CONCLUSIONS.includes(conclusion));
 }
 // Type guard to check if a string is a valid job conclusion
 function isValidJobConclusion(conclusion) {
@@ -29997,32 +29997,48 @@ function extractBranchName(ref, headRef) {
     // If we can't parse it, return the raw ref
     return ref;
 }
-function mapWorkflowStatus(status, conclusion) {
-    // Only completed workflows have conclusions
+function mapPipelineStatus(status, conclusion) {
+    // Only completed pipelines have conclusions
     // Valid conclusions: success, failure, cancelled, skipped
-    if (status === 'completed' && isValidWorkflowConclusion(conclusion)) {
+    if (status === 'completed' && isValidPipelineConclusion(conclusion)) {
         return conclusion;
     }
-    return 'unknown';
+    // Map GitHub status to pipeline status
+    if (status === 'queued')
+        return 'queued';
+    if (status === 'in_progress')
+        return 'running';
+    if (status === 'waiting')
+        return 'pending';
+    return 'running'; // Default to running for active pipelines
 }
 function mapJobStatus(status, conclusion) {
     if (status === 'completed' && isValidJobConclusion(conclusion)) {
         return conclusion;
     }
-    return 'unknown';
+    // Map GitHub job status to pipeline job status
+    if (status === 'queued')
+        return 'queued';
+    if (status === 'in_progress')
+        return 'running';
+    if (status === 'waiting')
+        return 'pending';
+    return 'running'; // Default to running for active jobs
 }
-function inferWorkflowStatusFromJobs(jobs, workflowStatus, workflowConclusion) {
-    // If workflow is already completed, use the actual status
-    if (workflowStatus === 'completed' && workflowConclusion) {
-        return mapWorkflowStatus(workflowStatus, workflowConclusion);
+function inferPipelineStatusFromJobs(jobs, pipelineStatus, pipelineConclusion) {
+    // If pipeline is already completed, use the actual status
+    if (pipelineStatus === 'completed' && pipelineConclusion) {
+        return mapPipelineStatus(pipelineStatus, pipelineConclusion);
     }
     // If no jobs, can't infer anything
     if (jobs.length === 0) {
-        return workflowStatus === 'queued'
+        return pipelineStatus === 'queued'
             ? 'queued'
-            : workflowStatus === 'in_progress'
+            : pipelineStatus === 'in_progress'
                 ? 'running'
-                : 'unknown';
+                : pipelineStatus === 'waiting'
+                    ? 'pending'
+                    : 'running';
     }
     // Check for failures first (highest priority)
     const hasFailure = jobs.some((job) => job.status === 'failure');
@@ -30034,9 +30050,17 @@ function inferWorkflowStatusFromJobs(jobs, workflowStatus, workflowConclusion) {
     if (hasCancelled) {
         return 'cancelled';
     }
-    // Check if there are any jobs still running (unknown status)
-    const hasRunningJobs = jobs.some((job) => job.status === 'unknown');
-    if (hasRunningJobs) {
+    // Check if there are any jobs still running or pending
+    const hasActiveJobs = jobs.some((job) => job.status === 'running' || job.status === 'pending' || job.status === 'queued');
+    if (hasActiveJobs) {
+        // Check if any are specifically pending
+        const hasPending = jobs.some((job) => job.status === 'pending');
+        if (hasPending)
+            return 'pending';
+        // Check if any are queued
+        const hasQueued = jobs.some((job) => job.status === 'queued');
+        if (hasQueued)
+            return 'queued';
         return 'running';
     }
     // Check if all jobs are completed and successful/skipped
@@ -30044,9 +30068,13 @@ function inferWorkflowStatusFromJobs(jobs, workflowStatus, workflowConclusion) {
     if (allCompleted) {
         return 'success';
     }
-    // If workflow is queued, return queued
-    if (workflowStatus === 'queued') {
+    // If pipeline is queued, return queued
+    if (pipelineStatus === 'queued') {
         return 'queued';
+    }
+    // If pipeline is waiting, return pending
+    if (pipelineStatus === 'waiting') {
+        return 'pending';
     }
     // Default to running if we have jobs but can't determine
     return 'running';
@@ -30093,14 +30121,14 @@ async function getCurrentJobId(octokit, owner, repo, runId, currentJobName, runn
         return undefined;
     }
 }
-async function fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, branch, excludeJobId, debug) {
+async function fetchPipelineRun(octokit, owner, repo, runId, isInlineMode, branch, excludeJobId, debug) {
     const { data: run } = await octokit.actions.getWorkflowRun({
         owner,
         repo,
         run_id: runId,
     });
     if (debug) {
-        core.debug(`workflow run:\n${JSON.stringify(run, null, 2)}`);
+        core.debug(`pipeline run:\n${JSON.stringify(run, null, 2)}`);
     }
     const { data: jobs } = await octokit.actions.listJobsForWorkflowRun({
         owner,
@@ -30108,7 +30136,7 @@ async function fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, branc
         run_id: runId,
     });
     if (debug) {
-        core.debug(`workflow jobs:\n${JSON.stringify(jobs, null, 2)}`);
+        core.debug(`pipeline jobs:\n${JSON.stringify(jobs, null, 2)}`);
     }
     // Filter out the current job if excludeJobId is provided (inline mode)
     // Only filter by numeric job ID to avoid false positives
@@ -30121,33 +30149,35 @@ async function fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, branc
         const completedAt = job.completed_at ? new Date(job.completed_at) : undefined;
         const durationSeconds = startedAt && completedAt
             ? Math.floor((completedAt.getTime() - startedAt.getTime()) / 1000)
-            : 0;
-        computeSeconds += durationSeconds;
+            : undefined;
+        if (durationSeconds !== undefined) {
+            computeSeconds += durationSeconds;
+        }
         return {
             name: job.name,
             job_id: job.id.toString(),
-            job_url: job.html_url || '',
+            job_url: job.html_url || undefined,
             status: mapJobStatus(job.status, job.conclusion),
             duration_seconds: durationSeconds,
             started_at: job.started_at || undefined,
             completed_at: job.completed_at || undefined,
         };
     });
-    const workflowStatus = inferWorkflowStatusFromJobs(jobMetrics, run.status, run.conclusion);
+    const pipelineStatus = inferPipelineStatusFromJobs(jobMetrics, run.status, run.conclusion);
     const startedAt = run.created_at ? new Date(run.created_at) : undefined;
     // Determine completed_at:
-    // - If workflow is marked as completed, use run.updated_at
-    // - If in inline mode (we're the last step), treat workflow as completed now
-    // - Otherwise, leave undefined for running workflows
+    // - If pipeline is marked as completed, use run.updated_at
+    // - If in inline mode (we're the last step), treat pipeline as completed now
+    // - Otherwise, leave undefined for running pipelines
     let completedAt;
     let completedAtString;
     if (run.status === 'completed' && run.updated_at) {
-        // Workflow is actually completed
+        // Pipeline is actually completed
         completedAt = new Date(run.updated_at);
         completedAtString = run.updated_at;
     }
     else if (isInlineMode) {
-        // In inline mode, we're the last step, so treat workflow as completed
+        // In inline mode, we're the last step, so treat pipeline as completed
         // Prefer run.updated_at if available (more accurate), otherwise use current time
         completedAt = run.updated_at ? new Date(run.updated_at) : new Date();
         completedAtString = run.updated_at || new Date().toISOString();
@@ -30156,25 +30186,25 @@ async function fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, branc
         ? Math.floor((completedAt.getTime() - startedAt.getTime()) / 1000)
         : startedAt
             ? Math.floor((Date.now() - startedAt.getTime()) / 1000)
-            : 0;
+            : undefined;
     return {
         provider: 'github',
         repository: `${owner}/${repo}`,
-        workflow_id: run.workflow_id.toString(),
-        workflow_name: run.name || run.workflow_id.toString(),
+        pipeline_id: run.workflow_id.toString(),
+        pipeline_name: run.name || run.workflow_id.toString(),
         run_id: run.id,
         run_attempt: run.run_attempt || 1,
-        run_name: run.display_title,
-        run_url: run.html_url,
-        status: workflowStatus,
+        run_name: run.display_title || undefined,
+        run_url: run.html_url || undefined,
+        status: pipelineStatus,
         mode: isInlineMode ? 'inline' : 'external',
-        compute_seconds: computeSeconds,
+        compute_seconds: computeSeconds > 0 ? computeSeconds : undefined,
         duration_seconds: durationSeconds,
         started_at: run.created_at,
         completed_at: completedAtString,
         triggered_by: run.event || 'unknown',
         actor: run.actor?.login || 'unknown',
-        branch,
+        branch: branch || undefined,
         jobs: jobMetrics,
     };
 }
@@ -30199,7 +30229,7 @@ async function sendMetrics(apiUrl, apiKey, metrics, dryRun, debug) {
         const errorText = await response.text();
         throw new Error(`Failed to send metrics: ${response.status} ${response.statusText} - ${errorText}`);
     }
-    core.info(`Successfully sent metrics for workflow run ${metrics.run_id}`);
+    core.info(`Successfully sent metrics for pipeline run ${metrics.run_id}`);
 }
 async function run() {
     try {
@@ -30244,9 +30274,9 @@ async function run() {
                 core.warning('Could not determine current job ID: missing job name');
             }
         }
-        const metrics = await fetchWorkflowRun(octokit, owner, repo, runId, isInlineMode, branch, currentJobId, debug);
+        const metrics = await fetchPipelineRun(octokit, owner, repo, runId, isInlineMode, branch, currentJobId, debug);
         await sendMetrics(runwatchApiUrl, runwatchApiKey, metrics, dryRun, debug);
-        core.setOutput('workflow_run_id', metrics.run_id.toString());
+        core.setOutput('pipeline_run_id', metrics.run_id.toString());
         core.setOutput('status', metrics.status);
     }
     catch (error) {

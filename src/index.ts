@@ -19,7 +19,15 @@ interface Job {
   name: string;
   job_id?: string;
   job_url?: string;
-  status: 'success' | 'failure' | 'cancelled' | 'running' | 'queued' | 'pending' | 'skipped' | 'timed_out';
+  status:
+    | 'success'
+    | 'failure'
+    | 'cancelled'
+    | 'running'
+    | 'queued'
+    | 'pending'
+    | 'skipped'
+    | 'timed_out';
   duration_seconds?: number;
   started_at?: string;
   completed_at?: string;
@@ -34,7 +42,15 @@ interface PipelineMetrics {
   run_attempt: number;
   run_name?: string;
   run_url?: string;
-  status: 'success' | 'failure' | 'cancelled' | 'running' | 'queued' | 'pending' | 'skipped' | 'timed_out';
+  status:
+    | 'success'
+    | 'failure'
+    | 'cancelled'
+    | 'running'
+    | 'queued'
+    | 'pending'
+    | 'skipped'
+    | 'timed_out';
   mode: 'inline' | 'external';
   compute_seconds?: number;
   duration_seconds?: number;
@@ -157,7 +173,9 @@ function inferPipelineStatusFromJobs(
   }
 
   // Check if there are any jobs still running or pending
-  const hasActiveJobs = jobs.some((job) => job.status === 'running' || job.status === 'pending' || job.status === 'queued');
+  const hasActiveJobs = jobs.some(
+    (job) => job.status === 'running' || job.status === 'pending' || job.status === 'queued'
+  );
   if (hasActiveJobs) {
     // Check if any are specifically pending
     const hasPending = jobs.some((job) => job.status === 'pending');
@@ -230,7 +248,7 @@ async function getCurrentJobId(
 
       core.warning(
         `Multiple jobs found with name "${currentJobName}" but none match runner "${runnerName}". ` +
-        `Not filtering to avoid false positives.`
+          `Not filtering to avoid false positives.`
       );
       return undefined;
     }
@@ -238,7 +256,7 @@ async function getCurrentJobId(
     // Multiple matches but no runner name - don't filter to avoid false positives
     core.warning(
       `Multiple jobs found with name "${currentJobName}" (${matchingJobs.length} matches). ` +
-      `Not filtering to avoid false positives.`
+        `Not filtering to avoid false positives.`
     );
     return undefined;
   } catch (error) {
