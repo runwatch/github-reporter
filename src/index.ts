@@ -400,7 +400,7 @@ async function sendMetrics(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      'X-API-Key': apiKey,
     },
     body: jsonPayload,
   });
