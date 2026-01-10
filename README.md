@@ -1,6 +1,6 @@
 # RunWatch GitHub Reporter
 
-A GitHub Action that automatically collects and reports CI/CD workflow metrics to the RunWatch Pipeline Pulse Portal. Designed for developers who need visibility into their pipeline performance, this action captures comprehensive workflow and job-level metrics including execution times, status, compute usage, and more.
+A GitHub Action that automatically collects and reports CI/CD workflow metrics to the [RunWatch Pipeline Pulse Portal](https://runwatch.io/). Designed for developers who need visibility into their pipeline performance, this action captures comprehensive workflow and job-level metrics including execution times, status, compute usage, and more.
 
 ## Overview
 
@@ -204,7 +204,7 @@ The action collects and reports the following metrics:
 
 ### 1. Get Your RunWatch API Key
 
-Obtain your API key from the RunWatch Portal. This will be used to authenticate requests to the ingestion API.
+Obtain your API key from the [RunWatch Pipeline Pulse Portal](https://runwatch.io/dashboard/access-keys). This will be used to authenticate requests to the ingestion API.
 
 ### 2. Add GitHub Secret
 
@@ -366,3 +366,7 @@ If using classic tokens, select `public_repo` scope (or `repo` for private repos
 ## License
 
 MIT
+
+---
+
+RunWatch is operated by [Cryostack Tech LLC](https://cryostack.tech/).
