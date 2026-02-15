@@ -29964,9 +29964,15 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(6966));
 const github = __importStar(__nccwpck_require__(4903));
 // Valid pipeline conclusions (only for completed pipelines)
-const VALID_PIPELINE_CONCLUSIONS = ['success', 'failure', 'cancelled', 'skipped'];
+const VALID_PIPELINE_CONCLUSIONS = [
+    'success',
+    'failure',
+    'cancelled',
+    'skipped',
+    'timed_out',
+];
 // Valid job conclusions
-const VALID_JOB_CONCLUSIONS = ['success', 'failure', 'cancelled', 'skipped'];
+const VALID_JOB_CONCLUSIONS = ['success', 'failure', 'cancelled', 'skipped', 'timed_out'];
 // Type guard to check if a string is a valid pipeline conclusion
 function isValidPipelineConclusion(conclusion) {
     return (conclusion !== null &&
@@ -30079,15 +30085,30 @@ function inferPipelineStatusFromJobs(jobs, pipelineStatus, pipelineConclusion) {
     // Default to running if we have jobs but can't determine
     return 'running';
 }
-async function getCurrentJobId(octokit, owner, repo, runId, currentJobName, runnerName) {
-    try {
-        const { data: jobs } = await octokit.actions.listJobsForWorkflowRun({
+const JOBS_PAGE_SIZE = 100;
+async function listAllJobsForWorkflowRun(octokit, owner, repo, runId) {
+    const allJobs = [];
+    let page = 1;
+    let hasMore = true;
+    while (hasMore) {
+        const { data } = await octokit.actions.listJobsForWorkflowRun({
             owner,
             repo,
             run_id: runId,
+            per_page: JOBS_PAGE_SIZE,
+            page,
         });
+        allJobs.push(...data.jobs);
+        hasMore = data.jobs.length === JOBS_PAGE_SIZE;
+        page += 1;
+    }
+    return allJobs;
+}
+async function getCurrentJobId(octokit, owner, repo, runId, currentJobName, runnerName) {
+    try {
+        const jobs = await listAllJobsForWorkflowRun(octokit, owner, repo, runId);
         // Find all jobs matching the current job name
-        const matchingJobs = jobs.jobs.filter((job) => {
+        const matchingJobs = jobs.filter((job) => {
             return job.name === currentJobName;
         });
         if (matchingJobs.length === 0) {
@@ -30122,27 +30143,38 @@ async function getCurrentJobId(octokit, owner, repo, runId, currentJobName, runn
     }
 }
 async function fetchPipelineRun(octokit, owner, repo, runId, isInlineMode, branch, excludeJobId, debug) {
-    const { data: run } = await octokit.actions.getWorkflowRun({
-        owner,
-        repo,
-        run_id: runId,
-    });
+    let run;
+    try {
+        const result = await octokit.actions.getWorkflowRun({
+            owner,
+            repo,
+            run_id: runId,
+        });
+        run = result.data;
+    }
+    catch (error) {
+        const status = error && typeof error === 'object' && 'status' in error
+            ? error.status
+            : undefined;
+        if (status === 404) {
+            throw new Error(`Workflow run ${runId} not found in ${owner}/${repo}. Check run ID and repository access (GITHUB_TOKEN permissions).`);
+        }
+        throw error;
+    }
     if (debug) {
         core.debug(`pipeline run:\n${JSON.stringify(run, null, 2)}`);
     }
-    const { data: jobs } = await octokit.actions.listJobsForWorkflowRun({
-        owner,
-        repo,
-        run_id: runId,
-    });
+    const jobsList = await listAllJobsForWorkflowRun(octokit, owner, repo, runId);
     if (debug) {
-        core.debug(`pipeline jobs:\n${JSON.stringify(jobs, null, 2)}`);
+        core.debug(`pipeline jobs:\n${JSON.stringify({ jobs: jobsList }, null, 2)}`);
     }
+    // Use the run's head_branch when reporting on another run (external mode) for correct branch
+    const branchToUse = !isInlineMode && run.head_branch ? run.head_branch : branch;
     // Filter out the current job if excludeJobId is provided (inline mode)
     // Only filter by numeric job ID to avoid false positives
     const filteredJobs = excludeJobId
-        ? jobs.jobs.filter((job) => job.id !== excludeJobId)
-        : jobs.jobs;
+        ? jobsList.filter((job) => job.id !== excludeJobId)
+        : jobsList;
     let computeSeconds = 0;
     const jobMetrics = filteredJobs.map((job) => {
         const startedAt = job.started_at ? new Date(job.started_at) : undefined;
@@ -30204,7 +30236,7 @@ async function fetchPipelineRun(octokit, owner, repo, runId, isInlineMode, branc
         completed_at: completedAtString,
         triggered_by: run.event || 'unknown',
         actor: run.actor?.login || 'unknown',
-        branch: branch || undefined,
+        branch: branchToUse || undefined,
         jobs: jobMetrics,
     };
 }
@@ -30217,14 +30249,31 @@ async function sendMetrics(apiUrl, apiKey, metrics, dryRun, debug) {
             return;
         }
     }
-    const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-API-Key': apiKey,
-        },
-        body: jsonPayload,
-    });
+    const FETCH_TIMEOUT_MS = 60000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let response;
+    try {
+        response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': apiKey,
+            },
+            body: jsonPayload,
+            signal: controller.signal,
+        });
+    }
+    catch (fetchError) {
+        clearTimeout(timeoutId);
+        const err = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
+        const causeProp = 'cause' in err ? err.cause : undefined;
+        const cause = causeProp instanceof Error ? causeProp.message : causeProp ? String(causeProp) : '';
+        const detail = cause ? ` (cause: ${cause})` : '';
+        const timeoutHint = err.name === 'AbortError' ? ` Request timed out after ${FETCH_TIMEOUT_MS / 1000}s.` : '';
+        throw new Error(`Failed to send metrics to ${apiUrl}: ${err.message}${detail}.${timeoutHint} Check network, DNS, TLS, and API availability.`);
+    }
+    clearTimeout(timeoutId);
     if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Failed to send metrics: ${response.status} ${response.statusText} - ${errorText}`);
@@ -30253,7 +30302,9 @@ async function run() {
         if (isNaN(runId) || runId <= 0) {
             throw new Error(`Invalid workflow_run_id: ${workflowRunIdInput || 'not provided'}`);
         }
-        const isInlineMode = context.eventName !== 'workflow_run';
+        // Inline = we're a step inside the same run we're reporting on (runId === context.runId).
+        // External = we're reporting on another run (e.g. workflow_run trigger or a different run_id passed in).
+        const isInlineMode = runId === context.runId;
         // Extract branch name from GitHub context
         const branch = extractBranchName(context.ref, context.payload.pull_request?.head?.ref || '');
         core.info(`Fetching metrics for:\nworkflow_run_id: ${runId}\nrepository: ${owner}/${repo}\nbranch: ${branch}\nrunwatch_api_url: ${runwatchApiUrl}\nmode: ${isInlineMode ? 'inline' : 'external'}\ndry_run: ${dryRun}\ndebug: ${debug}`);

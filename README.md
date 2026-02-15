@@ -21,7 +21,7 @@ This action is particularly useful for teams looking to:
 
 ## Two Modes of Operation
 
-The action supports two distinct modes, each with different use cases and trade-offs:
+The action supports two distinct modes, each with different use cases and trade-offs. **Mode is determined automatically**: inline when the run you're reporting on is the current run (`workflow_run_id` omitted or equal to the current run ID), and external when you pass a different run ID (e.g. a dedicated "collect-metrics" job reporting another workflow run).
 
 ### Inline Mode
 
@@ -45,7 +45,7 @@ The action supports two distinct modes, each with different use cases and trade-
 - ⚠️ Must manually list all dependent jobs in `needs` clause
 - ⚠️ Workflow marked complete only after reporter finishes
 - ⚠️ Adds a small overhead to workflow execution time
-- ⚠️ Final workflow conclustion and time must be inferred
+- ⚠️ Final workflow conclusion and time must be inferred
 
 **Example:**
 
@@ -122,13 +122,20 @@ jobs:
           workflow_run_id: ${{ github.event.workflow_run.id }}
 ```
 
+## Outputs
+
+| Output | Description |
+|--------|--------------|
+| `pipeline_run_id` | The GitHub Actions workflow run ID that was reported. |
+| `status` | The reported pipeline status (e.g. `success`, `failure`, `cancelled`). |
+
 ## Input Parameters
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `runwatch_api_key` | ✅ Yes | — | API key or token for authentication with the RunWatch API. Store in GitHub Secrets. |
 | `runwatch_api_url` | ❌ No | `https://api.runwatch.io/v1/ingest` | URL of the RunWatch ingestion API endpoint. Override if using a custom endpoint. |
-| `workflow_run_id` | ❌ No | `${{ github.run_id }}` | The GitHub Actions workflow run ID to report metrics for. Only needed in external mode or when reporting on a different run. |
+| `workflow_run_id` | ❌ No | `${{ github.run_id }}` | The GitHub Actions workflow run ID to report metrics for. Omit or set to the current run for inline mode. When set to a different run (e.g. a separate reporting job), the action runs in external mode and reports that run's branch and jobs. |
 | `dry_run` | ❌ No | `false` | If `true`, logs the JSON payload without posting to the API. Useful for testing and debugging. |
 | `debug` | ❌ No | `false` | If `true`, logs additional debug information including raw API responses. Useful for troubleshooting. |
 
@@ -138,9 +145,9 @@ The action collects and reports the following metrics:
 
 ### Workflow-Level Metrics
 - **Repository**: Full repository name (e.g., `owner/repo`)
-- **Workflow ID & Name**: GitHub workflow identifier and display name
+- **Pipeline ID & Name**: GitHub workflow identifier and display name (sent as `pipeline_id`, `pipeline_name`)
 - **Run ID & Name**: Specific run identifier and title
-- **Status**: `success`, `failure`, `cancelled`, `skipped`, `running`, `queued`, or `unknown`
+- **Status**: `success`, `failure`, `cancelled`, `skipped`, `timed_out`, `running`, `queued`, or `unknown`
 - **Mode**: `inline` or `external` (how the action was invoked)
 - **Duration**: Total elapsed workflow execution time in seconds
 - **Compute Time**: Total of all job execution times in seconds (factors in parallel jobs for cost analysis)
@@ -153,7 +160,7 @@ The action collects and reports the following metrics:
 - **Job Name**: Display name of the job
 - **Job ID**: GitHub job identifier
 - **Job URL**: Direct link to the job in GitHub UI
-- **Status**: `success`, `failure`, `cancelled`, `skipped`, or `unknown`
+- **Status**: `success`, `failure`, `cancelled`, `skipped`, `timed_out`, or `unknown`
 - **Duration**: Job execution time in seconds
 - **Started At**: ISO 8601 timestamp of job start
 - **Completed At**: ISO 8601 timestamp of job completion
@@ -164,8 +171,8 @@ The action collects and reports the following metrics:
 {
   "provider": "github",
   "repository": "acme/cool-project",
-  "workflow_id": "123456",
-  "workflow_name": "CI Pipeline",
+  "pipeline_id": "123456",
+  "pipeline_name": "CI Pipeline",
   "run_id": 789012345,
   "run_name": "Fix login bug",
   "run_url": "https://github.com/acme/cool-project/actions/runs/789012345",
@@ -249,6 +256,15 @@ act -W .github/workflows/your-workflow.yml
 3. **Enable debug mode**: Set `debug: true` to see detailed logs
 4. **Check workflow logs**: Look for error messages in the action's output
 5. **Verify network access**: Ensure GitHub Actions runners can reach your API endpoint
+
+### Action Fails with "Failed to send metrics" or "fetch failed"
+
+The action uses a 60-second timeout when posting to the RunWatch API. Error messages include the endpoint URL, cause (e.g. network/DNS/TLS), and a timeout hint if the request was aborted. Check:
+
+1. **Endpoint**: Confirm `runwatch_api_url` is correct and reachable from GitHub's runners
+2. **Network**: Transient failures can occur; retry the workflow or check RunWatch status
+3. **Timeout**: For very large payloads or slow networks, the request may time out after 60 seconds
+4. **Debug**: Set `debug: true` and inspect the full error message and optional cause in the logs
 
 ### Inline Mode Reports Current Job
 

@@ -1,6 +1,6 @@
 {
   "name": "github-reporter",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "GitHub Action to report CI workflow metrics to the RunWatch Pipeline Pulse Portal",
   "main": "dist/index.js",
   "scripts": {
@@ -24,11 +24,11 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
-    "@types/node": "^20.19.28",
+    "@types/node": "^20.19.33",
     "@vercel/ncc": "^0.38.4",
     "eslint": "^9.39.2",
-    "prettier": "^3.7.4",
+    "prettier": "^3.8.1",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.52.0"
+    "typescript-eslint": "^8.55.0"
   }
 }

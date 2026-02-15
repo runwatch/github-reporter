@@ -23,6 +23,12 @@ inputs:
     required: false
     default: 'false'
 
+outputs:
+  pipeline_run_id:
+    description: 'The GitHub Actions workflow run ID that was reported'
+  status:
+    description: 'The reported pipeline status (e.g. success, failure, cancelled)'
+
 runs:
   using: 'node20'
   main: 'dist/index.js'

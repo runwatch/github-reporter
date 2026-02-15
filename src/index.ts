@@ -63,9 +63,15 @@ interface PipelineMetrics {
 }
 
 // Valid pipeline conclusions (only for completed pipelines)
-const VALID_PIPELINE_CONCLUSIONS = ['success', 'failure', 'cancelled', 'skipped'] as const;
+const VALID_PIPELINE_CONCLUSIONS = [
+  'success',
+  'failure',
+  'cancelled',
+  'skipped',
+  'timed_out',
+] as const;
 // Valid job conclusions
-const VALID_JOB_CONCLUSIONS = ['success', 'failure', 'cancelled', 'skipped'] as const;
+const VALID_JOB_CONCLUSIONS = ['success', 'failure', 'cancelled', 'skipped', 'timed_out'] as const;
 
 // Type guard to check if a string is a valid pipeline conclusion
 function isValidPipelineConclusion(
@@ -206,6 +212,34 @@ function inferPipelineStatusFromJobs(
   return 'running';
 }
 
+const JOBS_PAGE_SIZE = 100;
+
+async function listAllJobsForWorkflowRun(
+  octokit: OctokitRest,
+  owner: string,
+  repo: string,
+  runId: number
+): Promise<GitHubJob[]> {
+  const allJobs: GitHubJob[] = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data } = await octokit.actions.listJobsForWorkflowRun({
+      owner,
+      repo,
+      run_id: runId,
+      per_page: JOBS_PAGE_SIZE,
+      page,
+    });
+    allJobs.push(...(data.jobs as GitHubJob[]));
+    hasMore = data.jobs.length === JOBS_PAGE_SIZE;
+    page += 1;
+  }
+
+  return allJobs;
+}
+
 async function getCurrentJobId(
   octokit: OctokitRest,
   owner: string,
@@ -215,14 +249,10 @@ async function getCurrentJobId(
   runnerName?: string
 ): Promise<number | undefined> {
   try {
-    const { data: jobs } = await octokit.actions.listJobsForWorkflowRun({
-      owner,
-      repo,
-      run_id: runId,
-    });
+    const jobs = await listAllJobsForWorkflowRun(octokit, owner, repo, runId);
 
     // Find all jobs matching the current job name
-    const matchingJobs = jobs.jobs.filter((job: GitHubJob) => {
+    const matchingJobs = jobs.filter((job: GitHubJob) => {
       return job.name === currentJobName;
     });
 
@@ -278,31 +308,45 @@ async function fetchPipelineRun(
   excludeJobId?: number,
   debug?: boolean
 ): Promise<PipelineMetrics> {
-  const { data: run } = await octokit.actions.getWorkflowRun({
-    owner,
-    repo,
-    run_id: runId,
-  });
+  let run: Awaited<ReturnType<OctokitRest['actions']['getWorkflowRun']>>['data'];
+  try {
+    const result = await octokit.actions.getWorkflowRun({
+      owner,
+      repo,
+      run_id: runId,
+    });
+    run = result.data;
+  } catch (error) {
+    const status =
+      error && typeof error === 'object' && 'status' in error
+        ? (error as { status: number }).status
+        : undefined;
+    if (status === 404) {
+      throw new Error(
+        `Workflow run ${runId} not found in ${owner}/${repo}. Check run ID and repository access (GITHUB_TOKEN permissions).`
+      );
+    }
+    throw error;
+  }
 
   if (debug) {
     core.debug(`pipeline run:\n${JSON.stringify(run, null, 2)}`);
   }
 
-  const { data: jobs } = await octokit.actions.listJobsForWorkflowRun({
-    owner,
-    repo,
-    run_id: runId,
-  });
+  const jobsList = await listAllJobsForWorkflowRun(octokit, owner, repo, runId);
 
   if (debug) {
-    core.debug(`pipeline jobs:\n${JSON.stringify(jobs, null, 2)}`);
+    core.debug(`pipeline jobs:\n${JSON.stringify({ jobs: jobsList }, null, 2)}`);
   }
+
+  // Use the run's head_branch when reporting on another run (external mode) for correct branch
+  const branchToUse = !isInlineMode && run.head_branch ? run.head_branch : branch;
 
   // Filter out the current job if excludeJobId is provided (inline mode)
   // Only filter by numeric job ID to avoid false positives
   const filteredJobs = excludeJobId
-    ? jobs.jobs.filter((job: GitHubJob) => job.id !== excludeJobId)
-    : jobs.jobs;
+    ? jobsList.filter((job: GitHubJob) => job.id !== excludeJobId)
+    : jobsList;
 
   let computeSeconds = 0;
 
@@ -374,7 +418,7 @@ async function fetchPipelineRun(
     completed_at: completedAtString,
     triggered_by: run.event || 'unknown',
     actor: run.actor?.login || 'unknown',
-    branch: branch || undefined,
+    branch: branchToUse || undefined,
     jobs: jobMetrics,
   };
 }
@@ -396,14 +440,37 @@ async function sendMetrics(
     }
   }
 
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': apiKey,
-    },
-    body: jsonPayload,
-  });
+  const FETCH_TIMEOUT_MS = 60_000;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
+      },
+      body: jsonPayload,
+      signal: controller.signal,
+    });
+  } catch (fetchError) {
+    clearTimeout(timeoutId);
+    const err = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
+    const causeProp = 'cause' in err ? (err as Error & { cause?: unknown }).cause : undefined;
+    const cause =
+      causeProp instanceof Error ? causeProp.message : causeProp ? String(causeProp) : '';
+    const detail = cause ? ` (cause: ${cause})` : '';
+    const timeoutHint =
+      err.name === 'AbortError' ? ` Request timed out after ${FETCH_TIMEOUT_MS / 1000}s.` : '';
+    throw new Error(
+      `Failed to send metrics to ${apiUrl}: ${err.message}${detail}.${timeoutHint} Check network, DNS, TLS, and API availability.`
+    );
+  }
+
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -440,7 +507,9 @@ async function run(): Promise<void> {
     if (isNaN(runId) || runId <= 0) {
       throw new Error(`Invalid workflow_run_id: ${workflowRunIdInput || 'not provided'}`);
     }
-    const isInlineMode = context.eventName !== 'workflow_run';
+    // Inline = we're a step inside the same run we're reporting on (runId === context.runId).
+    // External = we're reporting on another run (e.g. workflow_run trigger or a different run_id passed in).
+    const isInlineMode = runId === context.runId;
 
     // Extract branch name from GitHub context
     const branch = extractBranchName(context.ref, context.payload.pull_request?.head?.ref || '');
