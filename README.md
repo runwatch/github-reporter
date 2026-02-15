@@ -134,7 +134,7 @@ jobs:
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `runwatch_api_key` | ✅ Yes | — | API key or token for authentication with the RunWatch API. Store in GitHub Secrets. |
-| `runwatch_api_url` | ❌ No | `https://api.runwatch.io/v1/ingest` | URL of the RunWatch ingestion API endpoint. Override if using a custom endpoint. |
+| `runwatch_api_url` | ❌ No | `https://api.runwatch.io/functions/v1/ingest` | URL of the RunWatch ingestion API endpoint. Override if using a custom endpoint. |
 | `workflow_run_id` | ❌ No | `${{ github.run_id }}` | The GitHub Actions workflow run ID to report metrics for. Omit or set to the current run for inline mode. When set to a different run (e.g. a separate reporting job), the action runs in external mode and reports that run's branch and jobs. |
 | `dry_run` | ❌ No | `false` | If `true`, logs the JSON payload without posting to the API. Useful for testing and debugging. |
 | `debug` | ❌ No | `false` | If `true`, logs additional debug information including raw API responses. Useful for troubleshooting. |

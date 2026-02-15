@@ -30282,7 +30282,7 @@ async function sendMetrics(apiUrl, apiKey, metrics, dryRun, debug) {
 }
 async function run() {
     try {
-        const runwatchApiUrl = core.getInput('runwatch_api_url', { required: true });
+        const runwatchApiUrl = core.getInput('runwatch_api_url') || 'https://api.runwatch.io/functions/v1/ingest';
         const runwatchApiKey = core.getInput('runwatch_api_key', { required: true });
         const workflowRunIdInput = core.getInput('workflow_run_id');
         const dryRunInput = core.getInput('dry_run');

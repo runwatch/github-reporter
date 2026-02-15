@@ -20,13 +20,13 @@ interface Job {
   job_id?: string;
   job_url?: string;
   status:
-    | 'success'
-    | 'failure'
     | 'cancelled'
-    | 'running'
-    | 'queued'
+    | 'failure'
     | 'pending'
+    | 'queued'
+    | 'running'
     | 'skipped'
+    | 'success'
     | 'timed_out';
   duration_seconds?: number;
   started_at?: string;
@@ -43,13 +43,13 @@ interface PipelineMetrics {
   run_name?: string;
   run_url?: string;
   status:
-    | 'success'
-    | 'failure'
     | 'cancelled'
-    | 'running'
-    | 'queued'
+    | 'failure'
     | 'pending'
+    | 'queued'
+    | 'running'
     | 'skipped'
+    | 'success'
     | 'timed_out';
   mode: 'inline' | 'external';
   compute_seconds?: number;
@@ -484,7 +484,8 @@ async function sendMetrics(
 
 async function run(): Promise<void> {
   try {
-    const runwatchApiUrl = core.getInput('runwatch_api_url', { required: true });
+    const runwatchApiUrl =
+      core.getInput('runwatch_api_url') || 'https://api.runwatch.io/functions/v1/ingest';
     const runwatchApiKey = core.getInput('runwatch_api_key', { required: true });
     const workflowRunIdInput = core.getInput('workflow_run_id');
     const dryRunInput = core.getInput('dry_run');

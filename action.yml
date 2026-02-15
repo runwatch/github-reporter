@@ -6,7 +6,7 @@ inputs:
   runwatch_api_url:
     description: 'URL of the RunWatch ingestion API endpoint'
     required: false
-    default: 'https://api.runwatch.io/v1/ingest'
+    default: 'https://api.runwatch.io/functions/v1/ingest'
   runwatch_api_key:
     description: 'API Key or Token for authentication with the RunWatch API'
     required: true
