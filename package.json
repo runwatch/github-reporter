@@ -1,7 +1,7 @@
 {
   "name": "github-reporter",
-  "version": "1.0.3",
-  "description": "GitHub Action to report CI workflow metrics to the RunWatch Pipeline Pulse Portal",
+  "version": "1.1.0",
+  "description": "Track parallel-aware compute costs, wasted runner minutes from failed builds, and pipeline performance trends. Free CI/CD monitoring for GitHub Actions with cost visibility, efficiency analytics, and smart alerts.",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -32,6 +32,8 @@
     "typescript-eslint": "^8.57.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }
