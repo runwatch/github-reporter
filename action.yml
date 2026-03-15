@@ -1,5 +1,5 @@
 name: 'RunWatch CI Cost & Pipeline Analytics'
-description: 'Track parallel-aware compute costs, wasted runner minutes from failed builds, and pipeline performance trends. Free CI/CD monitoring for GitHub Actions with cost visibility, efficiency analytics, and smart alerts.'
+description: 'Track CI compute costs, wasted runner minutes, failure patterns, and pipeline trends. Free GitHub Actions monitoring and alerts.'
 author: 'RunWatch'
 
 inputs:
