@@ -1,5 +1,5 @@
-name: 'RunWatch GitHub Reporter'
-description: 'Report workflow and job metrics to the RunWatch Pipeline Pulse Portal'
+name: 'RunWatch CI Cost & Pipeline Analytics'
+description: 'Track parallel-aware compute costs, wasted runner minutes from failed builds, and pipeline performance trends. Free CI/CD monitoring for GitHub Actions with cost visibility, efficiency analytics, and smart alerts.'
 author: 'RunWatch'
 
 inputs:

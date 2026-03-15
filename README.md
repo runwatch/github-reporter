@@ -1,23 +1,48 @@
 # RunWatch GitHub Reporter
 
-A GitHub Action that automatically collects and reports CI/CD workflow metrics to the [RunWatch Pipeline Pulse Portal](https://runwatch.io/). Designed for developers who need visibility into their pipeline performance, this action captures comprehensive workflow and job-level metrics including execution times, status, compute usage, and more.
+**Your CI is burning money. Now you can see where.**
 
-## Overview
+A lightweight GitHub Action that tracks the full cost of CI pipeline failures - not just runner minutes, but the developer time and shipping delays that failed builds create. Sends metrics to [RunWatch](https://runwatch.io/) for dashboards, trends, and alerts.
 
-The RunWatch GitHub Reporter integrates seamlessly into your GitHub Actions workflows to provide real-time insights into your CI/CD pipeline performance. It automatically:
+> **Why does this exist?** A failed CI run costs more than compute. It costs a developer 20-45 minutes of context-switching, investigating, re-running, and waiting. Multiply that across a team and you lose hours every week to pipeline problems nobody is measuring. RunWatch tracks compute costs _and_ failure patterns so you can see the full cost - in minutes, dollars, and blocked deploys.
 
-- **Collects workflow metrics**: Run duration, status, trigger events, and compute time
-- **Captures job-level data**: Individual job execution times, status, and URLs
-- **Reports to RunWatch**: Sends structured JSON metrics to the RunWatch ingestion endpoint
-- **Supports multiple modes**: Works both inline (as a workflow step) and externally (via workflow triggers)
+## Why RunWatch?
 
-This action is particularly useful for teams looking to:
-- Track CI/CD pipeline performance over time
-- Identify slow or failing jobs
-- Monitor compute resource usage
-- Build dashboards and alerts around CI metrics
-- Analyze workflow patterns and trends
-- Identify and lower costs in your pipeline
+- **See real costs**: Parallel-aware compute tracking shows actual runner minutes, not wall-clock time that hides the bill
+- **Find what blocks shipping**: Surface the failures, flaky tests, and slow jobs that keep your team waiting instead of deploying
+- **Risk scoring**: Ranked risk scores identify the branches, jobs, and patterns causing the most re-work
+- **Track trends**: Success rates, duration, and efficiency metrics over time - catch drift before it doubles your build time
+- **Get alerts**: Slack, email, or webhook notifications when pipelines fail or slow down
+- **Zero config**: Add one step to your workflow. No tokens, no config files, no agents to install
+
+## Quick Start
+
+```yaml
+# Add to the end of any workflow
+report:
+  runs-on: ubuntu-latest
+  needs: [build, test] # list all your jobs
+  if: always()
+  steps:
+    - uses: runwatch/github-reporter@v1
+      with:
+        runwatch_api_key: ${{ secrets.RUNWATCH_API_KEY }}
+```
+
+Get your free API key at [runwatch.io/dashboard/access-keys](https://runwatch.io/dashboard/access-keys). Free tier includes 100 runs/month - no credit card required.
+
+## What You Get
+
+Once the reporter is running, your [RunWatch dashboard](https://runwatch.io/) shows:
+
+| Metric | Description |
+|--------|-------------|
+| **Compute Time** | Total runner minutes across all parallel jobs (what you're actually billed for) |
+| **Run Duration** | Wall-clock time from start to finish (what it felt like) |
+| **Waste** | Minutes burned on failed and cancelled runs - compute wasted, developers blocked |
+| **Success Rate** | Pipeline reliability over time, by branch, by actor |
+| **Trends** | Duration, compute, and failure patterns - catch CI drift before it slows your team |
+| **Risk Scores** | Branches, jobs, and patterns causing the most failures and re-work, ranked by impact |
 
 ## Two Modes of Operation
 
@@ -133,7 +158,7 @@ jobs:
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `runwatch_api_key` | ✅ Yes | — | API key or token for authentication with the RunWatch API. Store in GitHub Secrets. |
+| `runwatch_api_key` | ✅ Yes | - | API key or token for authentication with the RunWatch API. Store in GitHub Secrets. |
 | `runwatch_api_url` | ❌ No | `https://api.runwatch.io/functions/v1/ingest` | URL of the RunWatch ingestion API endpoint. Override if using a custom endpoint. |
 | `workflow_run_id` | ❌ No | `${{ github.run_id }}` | The GitHub Actions workflow run ID to report metrics for. Omit or set to the current run for inline mode. When set to a different run (e.g. a separate reporting job), the action runs in external mode and reports that run's branch and jobs. |
 | `dry_run` | ❌ No | `false` | If `true`, logs the JSON payload without posting to the API. Useful for testing and debugging. |
